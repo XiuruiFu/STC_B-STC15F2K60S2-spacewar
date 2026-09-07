@@ -18,6 +18,7 @@ import serial
 HEAD_PC0 = 0xAA
 HEAD_PC1 = 0x55
 FRAME_LEN = 24
+SER_READ_SIZE = 512
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -244,21 +245,28 @@ class SerialSource:
     """串口数据源, 从字节流中同步帧。"""
 
     def __init__(self, port: str, baud: int) -> None:
-        self.ser = serial.Serial(port, baud, timeout=0.05)
+        self.ser = serial.Serial(port, baud, timeout=0)
         self.buf = bytearray()
 
     def read_frame(self) -> bytes | None:
-        data = self.ser.read(256)
+        data = self.ser.read(SER_READ_SIZE)
         if data:
             self.buf.extend(data)
-        # 同步: 丢弃直到帧头, 命中后消费完整帧并继续后续字节
-        while len(self.buf) >= FRAME_LEN:
-            if self.buf[0] == HEAD_PC0 and self.buf[1] == HEAD_PC1:
-                frame = bytes(self.buf[0:FRAME_LEN])
-                del self.buf[0:FRAME_LEN]
-                return frame
+        # 丢弃头部非帧头的错位字节, 定位到帧头
+        while len(self.buf) >= 2 and not (
+            self.buf[0] == HEAD_PC0 and self.buf[1] == HEAD_PC1
+        ):
             self.buf.pop(0)
-        return None
+        # 若不足一帧, 等待更多数据
+        if len(self.buf) < FRAME_LEN:
+            return None
+        # 校验和校验, 防止误帧
+        if (sum(self.buf[0:FRAME_LEN - 1]) & 0xFF) != self.buf[FRAME_LEN - 1]:
+            self.buf.pop(0)
+            return None
+        frame = bytes(self.buf[0:FRAME_LEN])
+        del self.buf[0:FRAME_LEN]
+        return frame
 
     def close(self) -> None:
         self.ser.close()
@@ -308,9 +316,11 @@ def main() -> int:
                 running = False
 
         if src is not None:
+            # 每次循环读尽缓冲中所有帧, 只取最新一帧渲染, 避免帧堆积导致显示延迟
             frame = src.read_frame()
-            if frame is not None:
+            while frame is not None:
                 gs.parse(frame)
+                frame = src.read_frame()
 
         renderer.render(gs)
         renderer.clock.tick(100)
