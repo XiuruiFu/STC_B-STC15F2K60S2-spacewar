@@ -91,6 +91,8 @@ void main(void) {
     keys = 0; keys_prev = 0; fire_edge = 0;
     send_tick = 0;
     SetDisplayerArea(0, 7);
+    Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);
+    LedPrint(0);
     Seg7Print(2, 10, 10, 10, 10, 10, 10, 10);  /* 显示 '2' 表示 Player 2 */
 
     SetEventCallBack(enumEventSys10mS, cb_10ms);

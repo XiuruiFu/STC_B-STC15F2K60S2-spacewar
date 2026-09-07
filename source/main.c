@@ -465,6 +465,8 @@ void main(void) {
     ship1.active = 0; ship2.active = 0;
     bullet1.active = 0; bullet2.active = 0;
     SetDisplayerArea(0, 7);
+    Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);
+    LedPrint(0);
 
     SetEventCallBack(enumEventSys10mS, cb_10ms);
     SetEventCallBack(enumEventKey, cb_key);
