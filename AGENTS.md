@@ -119,7 +119,29 @@ project/
 
 ---
 
-## 4. 需求规格 (Requirements Specification)
+## 4. 开发与调试经验 (Hard-Won Lessons)
+
+> 以下为本项目联调过程中总结的**关键陷阱**，实现/修改固件时必须遵守。违反这些会导致难以排查的隐性 bug。
+
+1. **Keil 授权**：Keil µVision 必须使用**正版/已授权**版本。评估版 (Eval Version) 链接器限制 code ≤ 2KB，无法编译本工程（浮点库即超限）。报错特征：`FATAL ERROR L250: CODE SIZE LIMIT IN RESTRICTED VERSION EXCEEDED`。
+
+2. **Key3 (前进) 不能用 `GetKeyAct(enumKey3)`**：Key3 与导航摇杆的 K3 共用 P1.7 端口。BSP 规定 P1.7 上的 Key3 **必须**用 `GetAdcNavAct(enumAdcNavKey3)` 读取（触发 `enumEventNav` 事件）。`GetKeyAct(enumKey3)` 永远读不到，前进键会完全失效。Host 与 Slave 两端都要遵守。
+
+3. **导航键/摇杆必须 `AdcInit(ADCexpEXT)`**：凡需用 `GetAdcNavAct()` 检测导航键（上/下/左/右/K3），`AdcInit()` 参数必须是 `ADCexpEXT`。用 `ADCincEXT` 会导致导航键事件完全不触发（症状：拨动摇杆无反应）。`ADCexpEXT` 会占用 EXT 接口的 P1.0/P1.1 作 ADC。
+
+4. **UART 异步发送缓冲区必须用全局 `xdata` 数组**：`Uart1Print`/`Uart2Print` 是异步的（调用返回约 1µs，后台继续发）。若传入**函数内局部栈数组**，函数返回后该内存被其他函数的局部变量覆盖（C51 对 data 区做 Overlay 复用），导致帧头/数据被破坏——典型症状：帧头 `0xAA 0x55` 收到 `0xAA 0x00`（0x55 被覆盖）。**所有发送缓冲必须声明为全局 `xdata` 数组**（Host 的 `uart1_tx[24]`、Slave 的 `uart2_tx[4]` 已如此）。
+
+5. **`enumEventNav` 回调里要轮询所有关心的导航键**：`GetAdcNavAct()` 每次只返回一个键的事件（查询一次后该键事件清零）。在 `cb_nav` 里应逐个调用，不要只查一个。
+
+6. **P2 按键边沿检测**：Host 在 `cb_10ms` 里用 `(p2_keys & BIT) && !(p2_keys_prev & BIT)` 检测 P2 的边沿（开火/菜单确认）。**同一 tick 内不能对同一边沿做两次消费**——若先 `menu_confirm()` 切到新状态，又在同一函数体后续分支再次检测同一边沿，会立刻被改回。`p2_keys_prev = p2_keys` 更新须放在所有边沿检测之后。
+
+7. **PC 串口帧同步**：PC 端 `read_frame` 用 `timeout=0` 非阻塞读取，`while` 循环读尽缓冲、只取最新一帧渲染。若每 tick 只消费一帧或阻塞读，帧堆积会导致显示延迟数秒。
+
+8. **显示器初始化**：`DisplayerInit()` 后须手动 `Seg7Print(10,10,...)`（全灭）+ `LedPrint(0)`（灭灯）做初始清屏。
+
+---
+
+## 5. 需求规格 (Requirements Specification)
 
 > 以下为已与用户达成共识的需求决策，实现时须严格遵守。
 
@@ -165,7 +187,20 @@ project/
 
 ---
 
-## 5. 扩展功能规划 (Optional Extensions)
+## 6. 当前实现状态 (Implementation Status)
 
-- 触发震动传感器（`enumEventVib`）后飞船短暂加速。
+> 基础功能已完成验收。以下为当前代码事实与已知边界，供后续开发参考。
+
+- **已完成**：Host 物理引擎（双向推力+惯性+环绕+黑洞+子弹+碰撞+胜负）、状态机（菜单 3 项/游戏/结束/退出）、双串口、胜场持久化（DS1302 NVM 地址 0~2）、Slave 按键采集与上传、PC pygame 渲染器。
+- **菜单项**（3 项）：`0` 进入游戏、`1` 总胜场清零、`2` 退出游戏。
+- **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
+- **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
+- **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
+- **协议帧**：Slave→Host 4 字节；Host→PC 24 字节。详见 `docs/protocol.md`（三端唯一权威契约）。
+
+---
+
+## 7. 扩展功能规划 (Optional Extensions)
+
+- 触发震动传感器（`enumEventVib`）后飞船短暂加速（`Vib.h` 提供 `VibInit()`/`GetVibAct()`/`enumEventVib`；事件需 `SetEventCallBack` 绑定，`GetVibAct()` 查询一次有效）。
 - 其它可扩展玩法（如黑洞引力、多弹、道具等）。
