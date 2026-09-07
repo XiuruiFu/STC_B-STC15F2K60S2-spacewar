@@ -226,7 +226,7 @@ class Renderer:
         elif gs.state == ST_GAMEOVER:
             self.draw_gameover(gs)
         elif gs.state == ST_EXITED:
-            self.draw_exited(gs)
+            self.draw_exited()
         self.pygame.display.flip()
 
 
