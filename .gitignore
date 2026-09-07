@@ -1,0 +1,25 @@
+# Keil 构建产物
+output/
+list/
+*.m51
+*.lnp
+*.plg
+*.obj
+*.lst
+*.hex
+*.uvgui.*
+*.uvopt
+*.uvguix.*
+*.bak
+*_uvopt.bak
+*_uvproj.bak
+
+# uv / Python
+pc/.venv/
+__pycache__/
+*.pyc
+.uv/
+
+# 系统
+.DS_Store
+Thumbs.db
