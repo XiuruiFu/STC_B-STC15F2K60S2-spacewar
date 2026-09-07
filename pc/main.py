@@ -213,11 +213,6 @@ class Renderer:
         )
         self.screen.blit(wins, (self.width // 2 - wins.get_width() // 2, self.height // 2 + 20))
 
-    def draw_exited(self) -> None:
-        self.screen.fill((10, 10, 10))
-        txt = self.big_font.render("EXITED", True, (200, 200, 200))
-        self.screen.blit(txt, (self.width // 2 - txt.get_width() // 2, self.height // 2))
-
     def render(self, gs: GameState) -> None:
         if gs.state == ST_MENU:
             self.draw_menu(gs)
@@ -225,8 +220,6 @@ class Renderer:
             self.draw_game(gs)
         elif gs.state == ST_GAMEOVER:
             self.draw_gameover(gs)
-        elif gs.state == ST_EXITED:
-            self.draw_exited()
         self.pygame.display.flip()
 
 
@@ -321,6 +314,11 @@ def main() -> int:
             while frame is not None:
                 gs.parse(frame)
                 frame = src.read_frame()
+
+        # Host 发送 ST_EXITED 时, 直接关闭窗口退出程序
+        if gs.state == ST_EXITED:
+            running = False
+            continue
 
         renderer.render(gs)
         renderer.clock.tick(100)
