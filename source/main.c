@@ -83,6 +83,7 @@ xdata unsigned char p1_fire_edge;  /* P1 开火边沿标志 */
 xdata unsigned char p1wins, p2wins;
 xdata unsigned char g_flags;       /* bit0/1 爆炸特效, bit2/3 胜者 */
 xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
+xdata unsigned char exit_tick;     /* EXITED 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
 
 xdata unsigned char uart2_rx[4];   /* Slave 按键帧接收缓冲 */
@@ -125,6 +126,7 @@ void menu_confirm(void) {
             break;
         case 2: /* 退出游戏 */
             g_state = ST_EXITED;
+            exit_tick = 100;  /* 1 秒后自动回菜单(PC 已自行退出) */
             SetBeep(400, 10);
             break;
     }
@@ -344,10 +346,6 @@ void cb_10ms(void) {
         if ((p2_keys & K_MENUDOWN) && !(p2_keys_prev & K_MENUDOWN)) menu_move(+1);
         if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) menu_confirm();
     }
-    /* EXITED 态: P2 按确认键返回菜单 */
-    if (g_state == ST_EXITED) {
-        if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) g_state = ST_MENU;
-    }
 
     if (g_state == ST_PLAYING) {
         /* P1 开火边沿 */
@@ -374,6 +372,12 @@ void cb_10ms(void) {
                 g_state = ST_MENU;
                 g_flags = 0;
             }
+        }
+    }
+    else if (g_state == ST_EXITED) {
+        if (exit_tick > 0) {
+            exit_tick--;
+            if (exit_tick == 0) g_state = ST_MENU;
         }
     }
 
@@ -475,6 +479,7 @@ void main(void) {
     p1_fire_edge = 0;
     g_flags = 0;
     gameover_tick = 0;
+    exit_tick = 0;
     rs485_timeout = 0;
     rnd_seed = 0x1234;
     ship1.active = 0; ship2.active = 0;
