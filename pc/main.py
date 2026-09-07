@@ -34,7 +34,7 @@ FLAG_P2_WIN = 0x08
 FIELD = 256
 
 # 菜单项名称
-MENU_ITEMS = ["Start Game", "Show Wins", "Clear Wins", "Exit"]
+MENU_ITEMS = ["Start Game", "Clear Wins", "Exit"]
 
 # 朝向角: 0=朝右, 逆时针增大, 1 字节 0~255 表示 0~360°
 def angle_to_rad(a: int) -> float:

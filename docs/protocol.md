@@ -31,9 +31,11 @@
 |-----|------|------|
 | 0 | 向前推进 | Key3 |
 | 1 | 向后推进 | Key1 |
-| 2 | 发射 | Key2 |
+| 2 | 发射/确认 | Key2 |
 | 3 | 船头左转 | NavDown |
 | 4 | 船头右转 | NavUp |
+| 5 | 菜单上移 | NavLeft |
+| 6 | 菜单下移 | NavRight |
 
 ---
 
@@ -44,7 +46,7 @@
 | 0 | 帧头 0 | `0xAA` |
 | 1 | 帧头 1 | `0x55` |
 | 2 | `state` | 状态机：0=MENU，1=PLAYING，2=GAMEOVER，3=EXITED |
-| 3 | `menuSel` | 菜单选中项 0~3 |
+| 3 | `menuSel` | 菜单选中项 0~2 |
 | 4 | `p1x` | Player1 X 坐标 0~255 |
 | 5 | `p1y` | Player1 Y 坐标 0~255 |
 | 6 | `p1ang` | Player1 朝向角 0~255 (0~360°) |
@@ -92,11 +94,10 @@
 | 值 | 栏目 |
 |----|------|
 | 0 | 进入游戏 (Start Game) |
-| 1 | 双方总胜场 (Show Wins) |
-| 2 | 总胜场清零 (Clear Wins) |
-| 3 | 退出游戏 (Exit) |
+| 1 | 总胜场清零 (Clear Wins) |
+| 2 | 退出游戏 (Exit) |
 
-- `enumAdcNavKeyLeft` / `enumAdcNavKeyRight` 上下移动 `menuSel`（环绕 0↔3）。
+- `enumAdcNavKeyLeft` / `enumAdcNavKeyRight` 上下移动 `menuSel`（环绕 0↔2）。
 - `Key2` 确认当前项。
 - 游戏结束后自动回到 MENU 态。
 

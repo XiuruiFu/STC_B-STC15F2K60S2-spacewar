@@ -18,6 +18,8 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define K_FIRE  0x04
 #define K_LEFT  0x08
 #define K_RIGHT 0x10
+#define K_MENUUP    0x20   /* 菜单上移 (NavLeft) */
+#define K_MENUDOWN  0x40   /* 菜单下移 (NavRight) */
 
 #define HEAD_SLV0  0xA5
 #define HEAD_SLV1  0x5A
@@ -52,6 +54,15 @@ void cb_nav(void) {
     k = GetAdcNavAct(enumAdcNavKeyUp);
     if (k == enumKeyPress) keys |= K_RIGHT;
     else if (k == enumKeyRelease) keys &= ~K_RIGHT;
+
+    /* 菜单导航键 (由 Host 按状态解释) */
+    k = GetAdcNavAct(enumAdcNavKeyLeft);
+    if (k == enumKeyPress) keys |= K_MENUUP;
+    else if (k == enumKeyRelease) keys &= ~K_MENUUP;
+
+    k = GetAdcNavAct(enumAdcNavKeyRight);
+    if (k == enumKeyPress) keys |= K_MENUDOWN;
+    else if (k == enumKeyRelease) keys &= ~K_MENUDOWN;
 }
 
 void send_keys(void) {

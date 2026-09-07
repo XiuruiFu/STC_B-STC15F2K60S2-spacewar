@@ -34,6 +34,8 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define K_FIRE  0x04
 #define K_LEFT  0x08
 #define K_RIGHT 0x10
+#define K_MENUUP    0x20   /* 菜单上移 (NavLeft) */
+#define K_MENUDOWN  0x40   /* 菜单下移 (NavRight) */
 
 /* ================= 物理常量 ================= */
 #define FIELD        256
@@ -97,8 +99,8 @@ unsigned int rnd(void) {
 /* ================= 菜单导航 ================= */
 void menu_move(signed char dir) {
     signed char s = (signed char)g_menuSel + dir;
-    if (s < 0) s = 3;
-    if (s > 3) s = 0;
+    if (s < 0) s = 2;
+    if (s > 2) s = 0;
     g_menuSel = (unsigned char)s;
 }
 
@@ -114,17 +116,14 @@ void menu_confirm(void) {
             g_state = ST_PLAYING;
             SetBeep(800, 8);
             break;
-        case 1: /* 双方总胜场 -> 已在数码管常显, 仅提示音 */
-            SetBeep(600, 6);
-            break;
-        case 2: /* 总胜场清零 */
+        case 1: /* 总胜场清零 */
             p1wins = 0; p2wins = 0;
             NVM_Write(0, 0);
             NVM_Write(1, 0);
             NVM_Write(2, 0x5A);
             SetBeep(1000, 8);
             break;
-        case 3: /* 退出游戏 */
+        case 2: /* 退出游戏 */
             g_state = ST_EXITED;
             SetBeep(400, 10);
             break;
@@ -339,6 +338,17 @@ void cb_10ms(void) {
     /* RS485 超时检测 */
     if (rs485_timeout > 0) rs485_timeout--;
 
+    /* 菜单态: P2 菜单导航 + 确认 (边沿触发) */
+    if (g_state == ST_MENU) {
+        if ((p2_keys & K_MENUUP) && !(p2_keys_prev & K_MENUUP)) menu_move(-1);
+        if ((p2_keys & K_MENUDOWN) && !(p2_keys_prev & K_MENUDOWN)) menu_move(+1);
+        if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) menu_confirm();
+    }
+    /* EXITED 态: P2 按确认键返回菜单 */
+    if (g_state == ST_EXITED) {
+        if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) g_state = ST_MENU;
+    }
+
     if (g_state == ST_PLAYING) {
         /* P1 开火边沿 */
         if (p1_fire_edge) {
@@ -349,7 +359,6 @@ void cb_10ms(void) {
         if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) {
             if (bullet2.active == 0 && ship2.active) fire_bullet(&ship2, &bullet2);
         }
-        p2_keys_prev = p2_keys;
 
         update_ship(&ship1, p1_keys);
         update_ship(&ship2, p2_keys);
@@ -367,6 +376,8 @@ void cb_10ms(void) {
             }
         }
     }
+
+    p2_keys_prev = p2_keys;
 
     send_frame();
     display_wins();
