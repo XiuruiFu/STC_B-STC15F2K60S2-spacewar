@@ -139,6 +139,9 @@ void respawn_ship(Ship *s) {
     s->ang = (unsigned char)(rnd() & 0xFF);
     s->respawn = 0;
     s->active = 1;
+    /* 清除对应玩家的爆炸特效标志 */
+    if (s == &ship1) g_flags &= ~0x01;
+    if (s == &ship2) g_flags &= ~0x02;
 }
 
 /* ================= 发射子弹 ================= */
@@ -375,10 +378,6 @@ void cb_key(void) {
     if (k == enumKeyPress) p1_keys |= K_BACK;
     else if (k == enumKeyRelease) p1_keys &= ~K_BACK;
 
-    k = GetKeyAct(enumKey3);
-    if (k == enumKeyPress) p1_keys |= K_FWD;
-    else if (k == enumKeyRelease) p1_keys &= ~K_FWD;
-
     k = GetKeyAct(enumKey2);
     if (k == enumKeyPress) {
         if (g_state == ST_PLAYING) p1_fire_edge = 1;
@@ -390,6 +389,11 @@ void cb_key(void) {
 
 void cb_nav(void) {
     unsigned char k;
+    /* Key3(前进) 与导航键 K3 共用 P1.7, 只能通过 ADC 读 */
+    k = GetAdcNavAct(enumAdcNavKey3);
+    if (k == enumKeyPress) p1_keys |= K_FWD;
+    else if (k == enumKeyRelease) p1_keys &= ~K_FWD;
+
     /* 游戏态: 旋转 */
     k = GetAdcNavAct(enumAdcNavKeyDown);
     if (k == enumKeyPress) p1_keys |= K_LEFT;

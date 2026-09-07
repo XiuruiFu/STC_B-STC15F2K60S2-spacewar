@@ -34,16 +34,17 @@ void cb_key(void) {
     if (k == enumKeyPress) keys |= K_BACK;
     else if (k == enumKeyRelease) keys &= ~K_BACK;
 
-    k = GetKeyAct(enumKey3);
-    if (k == enumKeyPress) keys |= K_FWD;
-    else if (k == enumKeyRelease) keys &= ~K_FWD;
-
     k = GetKeyAct(enumKey2);
     if (k == enumKeyPress) fire_edge = 1;
 }
 
 void cb_nav(void) {
     unsigned char k;
+    /* Key3(前进) 与导航键 K3 共用 P1.7, 只能通过 ADC 读 */
+    k = GetAdcNavAct(enumAdcNavKey3);
+    if (k == enumKeyPress) keys |= K_FWD;
+    else if (k == enumKeyRelease) keys &= ~K_FWD;
+
     k = GetAdcNavAct(enumAdcNavKeyDown);
     if (k == enumKeyPress) keys |= K_LEFT;
     else if (k == enumKeyRelease) keys &= ~K_LEFT;
