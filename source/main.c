@@ -194,7 +194,7 @@ void update_ship(Ship *s, unsigned char keys) {
     if (s->active == 0) {
         if (s->respawn > 0) {
             s->respawn--;
-            if (s->respawn == 0) respawn_ship(s);
+            if (s->respawn == 0 && s->lives > 0) respawn_ship(s);
         }
         return;
     }

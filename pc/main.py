@@ -138,11 +138,14 @@ class Renderer:
         cx, cy = self.to_screen(ship.x, ship.y)
         ang = angle_to_rad(ship.ang)
         size = 10.0 * self.scale
-        nose = (cx + size * math.cos(ang), cy + size * math.sin(ang))
+        # 方向向量: (cos, -sin), 与 Host 物理引擎 diry=-sin 保持一致 (屏幕 Y 向下)
+        dirx = math.cos(ang)
+        diry = -math.sin(ang)
+        nose = (cx + size * dirx, cy + size * diry)
         left_ang = ang + math.pi * 0.75
         right_ang = ang - math.pi * 0.75
-        left = (cx + size * 0.6 * math.cos(left_ang), cy + size * 0.6 * math.sin(left_ang))
-        right = (cx + size * 0.6 * math.cos(right_ang), cy + size * 0.6 * math.sin(right_ang))
+        left = (cx + size * 0.6 * math.cos(left_ang), cy - size * 0.6 * math.sin(left_ang))
+        right = (cx + size * 0.6 * math.cos(right_ang), cy - size * 0.6 * math.sin(right_ang))
         self.pygame.draw.polygon(self.screen, color, [nose, left, right])
 
     def draw_explosion(self, x: int, y: int) -> None:
@@ -248,10 +251,12 @@ class SerialSource:
         data = self.ser.read(256)
         if data:
             self.buf.extend(data)
-        # 同步: 丢弃直到帧头
+        # 同步: 丢弃直到帧头, 命中后消费完整帧并继续后续字节
         while len(self.buf) >= FRAME_LEN:
             if self.buf[0] == HEAD_PC0 and self.buf[1] == HEAD_PC1:
-                return bytes(self.buf[0:FRAME_LEN])
+                frame = bytes(self.buf[0:FRAME_LEN])
+                del self.buf[0:FRAME_LEN]
+                return frame
             self.buf.pop(0)
         return None
 
