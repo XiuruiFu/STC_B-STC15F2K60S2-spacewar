@@ -84,6 +84,7 @@ xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
 
 xdata unsigned char uart2_rx[4];   /* Slave 按键帧接收缓冲 */
+xdata unsigned char uart1_tx[24];  /* Host->PC 发送缓冲(须全局, 异步发送期间不覆盖) */
 code  unsigned char slv_head[2] = {HEAD_SLV0, HEAD_SLV1};
 
 /* ================= 随机数 (简单 LCG) ================= */
@@ -281,35 +282,34 @@ void check_winner(void) {
 
 /* ================= 组帧发送 Host->PC ================= */
 void send_frame(void) {
-    unsigned char tx[24];
     unsigned char sum, i;
-    tx[0] = HEAD_PC0;
-    tx[1] = HEAD_PC1;
-    tx[2] = g_state;
-    tx[3] = g_menuSel;
-    tx[4] = (unsigned char)ship1.x;
-    tx[5] = (unsigned char)ship1.y;
-    tx[6] = ship1.ang;
-    tx[7] = ship1.lives;
-    tx[8] = (unsigned char)ship2.x;
-    tx[9] = (unsigned char)ship2.y;
-    tx[10] = ship2.ang;
-    tx[11] = ship2.lives;
-    tx[12] = bullet1.active;
-    tx[13] = (unsigned char)bullet1.x;
-    tx[14] = (unsigned char)bullet1.y;
-    tx[15] = 0;
-    tx[16] = bullet2.active;
-    tx[17] = (unsigned char)bullet2.x;
-    tx[18] = (unsigned char)bullet2.y;
-    tx[19] = 0;
-    tx[20] = p1wins;
-    tx[21] = p2wins;
-    tx[22] = g_flags;
+    uart1_tx[0] = HEAD_PC0;
+    uart1_tx[1] = HEAD_PC1;
+    uart1_tx[2] = g_state;
+    uart1_tx[3] = g_menuSel;
+    uart1_tx[4] = (unsigned char)ship1.x;
+    uart1_tx[5] = (unsigned char)ship1.y;
+    uart1_tx[6] = ship1.ang;
+    uart1_tx[7] = ship1.lives;
+    uart1_tx[8] = (unsigned char)ship2.x;
+    uart1_tx[9] = (unsigned char)ship2.y;
+    uart1_tx[10] = ship2.ang;
+    uart1_tx[11] = ship2.lives;
+    uart1_tx[12] = bullet1.active;
+    uart1_tx[13] = (unsigned char)bullet1.x;
+    uart1_tx[14] = (unsigned char)bullet1.y;
+    uart1_tx[15] = 0;
+    uart1_tx[16] = bullet2.active;
+    uart1_tx[17] = (unsigned char)bullet2.x;
+    uart1_tx[18] = (unsigned char)bullet2.y;
+    uart1_tx[19] = 0;
+    uart1_tx[20] = p1wins;
+    uart1_tx[21] = p2wins;
+    uart1_tx[22] = g_flags;
     sum = 0;
-    for (i = 0; i < 23; i++) sum += tx[i];
-    tx[23] = sum;
-    Uart1Print(tx, 24);
+    for (i = 0; i < 23; i++) sum += uart1_tx[i];
+    uart1_tx[23] = sum;
+    Uart1Print(uart1_tx, 24);
 }
 
 /* ================= 数码管显示胜场 ================= */
@@ -446,7 +446,7 @@ void init_nvm(void) {
 void main(void) {
     DisplayerInit();
     KeyInit();
-    AdcInit(ADCincEXT);
+    AdcInit(ADCexpEXT);
     BeepInit();
     Uart1Init(115200);
     Uart2Init(38400, Uart2Usedfor485);

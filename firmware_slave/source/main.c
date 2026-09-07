@@ -26,6 +26,7 @@ xdata unsigned char keys;        /* 当前按住状态掩码 */
 xdata unsigned char keys_prev;   /* 上一帧掩码 */
 xdata unsigned char fire_edge;   /* 开火边沿 */
 xdata unsigned int  send_tick;   /* 发送节拍 */
+xdata unsigned char uart2_tx[4]; /* 发送缓冲(须全局, 异步发送期间不覆盖) */
 
 void cb_key(void) {
     unsigned char k;
@@ -53,7 +54,6 @@ void cb_nav(void) {
 }
 
 void send_keys(void) {
-    unsigned char tx[4];
     unsigned char mask;
     unsigned char changed;
     mask = keys;
@@ -64,11 +64,11 @@ void send_keys(void) {
     changed = (mask != keys_prev);
     if (!changed && send_tick > 0) return;
     keys_prev = mask;
-    tx[0] = HEAD_SLV0;
-    tx[1] = HEAD_SLV1;
-    tx[2] = mask;
-    tx[3] = (unsigned char)(HEAD_SLV0 + HEAD_SLV1 + mask);
-    Uart2Print(tx, 4);
+    uart2_tx[0] = HEAD_SLV0;
+    uart2_tx[1] = HEAD_SLV1;
+    uart2_tx[2] = mask;
+    uart2_tx[3] = (unsigned char)(HEAD_SLV0 + HEAD_SLV1 + mask);
+    Uart2Print(uart2_tx, 4);
     if (!changed) send_tick = 10;   /* 无变化时每 100ms 保底发送一次(维持在线指示) */
 }
 
@@ -85,7 +85,7 @@ void cb_led(void) {
 void main(void) {
     DisplayerInit();
     KeyInit();
-    AdcInit(ADCincEXT);
+    AdcInit(ADCexpEXT);
     Uart2Init(38400, Uart2Usedfor485);
 
     keys = 0; keys_prev = 0; fire_edge = 0;
