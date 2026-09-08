@@ -139,7 +139,7 @@ project/
 
 8. **显示器初始化**：`DisplayerInit()` 后须手动 `Seg7Print(10,10,...)`（全灭）+ `LedPrint(0)`（灭灯）做初始清屏。
 
-9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 17 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
+9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/easterEgg/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 18 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
 
 ---
 
@@ -198,7 +198,7 @@ project/
 - **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
 - **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
 - **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
-- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `17 + 6*BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
+- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `18 + 6*BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
 - **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）。
 - **昼夜背景**（E2 已实现）：状态帧含 `bgMode` 字节（0=夜晚、1=白天）；`bgMode` 在"开始游戏"瞬间由 `GetADC().Rop > LIGHT_THRESHOLD` 判定，游戏过程中锁定不变。
 
@@ -229,6 +229,22 @@ project/
 - **可调常量**（迁入 `config.h`）：`GRAVITY=3.0`（引力常数，每 tick 加速度）、`GRAVITY_MIN_R=6`（距离下限截断）。初始值待实机标定手感。
 - **实现要点**：洞在中心 `(128,128)`，任意点到中心的单轴距离 ≤ `FIELD/2`，故 `dist2_wrap` 的环绕分支对中心洞**永不生效**；引力方向直接取普通欧氏方向即可（中心到洞无需环绕）。
 - **PC 端绘制**：黑洞 = 黑圆 + 紫环（现有样式）；白洞 = 白圆 + 浅色环（新增白洞样式，配色进 `config.py`）。
+
+### 7.3 彩蛋模式 (Easter Egg)
+- **触发链路**：从机霍尔传感器 → 从机红外发射 → 主机红外接收（两板红外接口物理对齐时才能收到，罕见故为彩蛋）。该链路**独立于 RS485 按键通道**。
+- **从机**：
+  - `HallInit()`，绑定 `enumEventHall` 回调；`GetHallAct()` 返回 `enumHallGetClose`（磁场靠近）或 `enumHallGetAway`（离开），**任一即触发**。
+  - `IrInit(NEC_R05d)`；触发后 `IrPrint(&magic, 1)` 发送 **1 字节魔数 `0xE1`**。
+  - **不防抖**；无需本地反馈。
+- **主机**：
+  - `IrInit(NEC_R05d)`，`SetIrRxd(ir_rx, 1)`；`enumEventIrRxd` 事件收到包后校验 `ir_rx[0]==0xE1` → 置 `g_easterArmed=1` 并 `SetBeep` 提示（仅 0→1 转变时响）。
+  - **无解除武装设计**；标志**开局即消耗**：`menu_confirm` 进入游戏时若 `g_easterArmed`，本局进入彩蛋地图并清零标志（一次性）。
+- **彩蛋地图（本局）**：
+  - PC 背景**纯白**（`(255,255,255)`）。
+  - 洞固定为**黑洞**（黑圆+紫环），物理为黑洞引力（与夜晚一致），**无视亮度**（`is_white = bgMode==BG_DAY && !easterEgg`）。
+  - 飞船/子弹/HUD 沿用**白天主题配色**（深色，纯白背景上可见）。
+- **主机 LED**：处于 `ST_MENU` 且 `g_easterArmed` 时，LED 持续**流水灯**（l0→l1→…→l7→l0 循环，参考"八位数码管+流水灯"样例 `a=(a==0)?1:(a<<1)`）；进入游戏后恢复常规 LED。
+- **协议**：状态帧新增 1 字节 `easterEgg`（0/1），位于 `bgMode` 之后 → `FRAME_TX_LEN = 18 + 6*BULLET_MAX`；PC 解析该字节并据此渲染（`easterEgg=1` 时忽略 `bgMode` 绘制纯白+黑洞）。
 
 ## 8. 人机协同 Git 工作流规范 (Human-AI Git Workflow)
 

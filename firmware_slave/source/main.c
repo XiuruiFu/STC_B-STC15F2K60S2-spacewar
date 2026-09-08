@@ -5,6 +5,8 @@
 #include "adc.H"
 #include "beep.H"
 #include "uart2.H"
+#include "hall.H"
+#include "IR.h"
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
 
@@ -25,11 +27,14 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define HEAD_SLV0  0xA5
 #define HEAD_SLV1  0x5A
 
+#define EASTER_MAGIC 0xE1  /* 彩蛋魔数(红外发送给主机) */
+
 xdata unsigned char keys;        /* 当前按住状态掩码 */
 xdata unsigned char keys_prev;   /* 上一帧掩码 */
 xdata unsigned char fire_edge;   /* 开火边沿 */
 xdata unsigned int  send_tick;   /* 发送节拍 */
 xdata unsigned char uart2_tx[4]; /* 发送缓冲(须全局, 异步发送期间不覆盖) */
+code  unsigned char ir_tx[1] = {EASTER_MAGIC}; /* 彩蛋红外数据(不防抖, 霍尔触发即发) */
 
 void cb_key(void) {
     unsigned char k;
@@ -98,12 +103,23 @@ void cb_led(void) {
     LedPrint(keys);
 }
 
+void cb_hall(void) {
+    unsigned char h;
+    h = GetHallAct();
+    /* 磁场靠近或离开任一即触发彩蛋红外发射(不防抖) */
+    if (h == enumHallGetClose || h == enumHallGetAway) {
+        IrPrint(ir_tx, 1);
+    }
+}
+
 void main(void) {
     DisplayerInit();
     KeyInit();
     AdcInit(ADCexpEXT);
     BeepInit();
     Uart2Init(38400, Uart2Usedfor485);
+    HallInit();
+    IrInit(NEC_R05d);
 
     keys = 0; keys_prev = 0; fire_edge = 0;
     send_tick = 0;
@@ -116,6 +132,7 @@ void main(void) {
     SetEventCallBack(enumEventKey, cb_key);
     SetEventCallBack(enumEventNav, cb_nav);
     SetEventCallBack(enumEventSys100mS, cb_led);
+    SetEventCallBack(enumEventHall, cb_hall);
 
     MySTC_Init();
 

@@ -27,6 +27,7 @@ from config import (
     COLOR_BG_GAMEOVER,
     COLOR_BG_GAME,
     COLOR_BG_GAME_DAY,
+    COLOR_BG_GAME_EASTER,
     COLOR_BG_MENU,
     COLOR_BLACKHOLE_FILL,
     COLOR_BLACKHOLE_RING,
@@ -65,11 +66,12 @@ HEAD_PC1 = 0x55
 SER_READ_SIZE = 512
 BULLETS_PER_PLAYER = BULLET_MAX  # 与 Host BULLET_MAX 一致
 
-# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+bgMode1+校验和1
+# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+bgMode1+easterEgg1+校验和1
 FRAME_P1WINS = 12 + 2 * BULLETS_PER_PLAYER * 3
 FRAME_FLAGS = FRAME_P1WINS + 2
 FRAME_BGMODE = FRAME_FLAGS + 1
-FRAME_LEN = FRAME_BGMODE + 2
+FRAME_EASTER = FRAME_BGMODE + 1
+FRAME_LEN = FRAME_EASTER + 2
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -116,6 +118,7 @@ class GameState:
         self.p2_wins = 0
         self.flags = 0
         self.bg_mode = BG_NIGHT
+        self.easter_egg = False
         self.frame_ok = False
 
     def parse(self, buf: bytes) -> bool:
@@ -145,6 +148,7 @@ class GameState:
         self.p2_wins = buf[FRAME_P1WINS + 1]
         self.flags = buf[FRAME_FLAGS]
         self.bg_mode = buf[FRAME_BGMODE]
+        self.easter_egg = buf[FRAME_EASTER] != 0
         self.p1.dead = bool(self.flags & FLAG_P1_DEAD)
         self.p2.dead = bool(self.flags & FLAG_P2_DEAD)
         self.frame_ok = True
@@ -246,7 +250,16 @@ class Renderer:
         self.screen.blit(wins, (self.width // 2 - wins.get_width() // 2, 380))
 
     def draw_game(self, gs: GameState) -> None:
-        if gs.bg_mode == BG_DAY:
+        if gs.easter_egg:
+            bg = COLOR_BG_GAME_EASTER
+            p1c = COLOR_P1_SHIP_DAY
+            p2c = COLOR_P2_SHIP_DAY
+            b1c = COLOR_BULLET_P1_DAY
+            b2c = COLOR_BULLET_P2_DAY
+            h1c = COLOR_HUD_P1_DAY
+            h2c = COLOR_HUD_P2_DAY
+            bg_img = None
+        elif gs.bg_mode == BG_DAY:
             bg = COLOR_BG_GAME_DAY
             p1c = COLOR_P1_SHIP_DAY
             p2c = COLOR_P2_SHIP_DAY
@@ -268,7 +281,7 @@ class Renderer:
             self.screen.blit(bg_img, (0, 0))
         else:
             self.screen.fill(bg)
-        self.draw_blackhole(gs.bg_mode == BG_DAY)
+        self.draw_blackhole(gs.bg_mode == BG_DAY and not gs.easter_egg)
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:

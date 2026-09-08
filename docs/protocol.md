@@ -43,7 +43,7 @@
 
 ## 3. Host → PC 状态帧 (可变长度, 由 BULLET_MAX 推导)
 
-帧长 `N = 17 + 6*BULLET_MAX`（`BULLET_MAX` 为每船同时在场子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。
+帧长 `N = 18 + 6*BULLET_MAX`（`BULLET_MAX` 为每船同时在场子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。
 
 | 偏移 | 字段 | 说明 |
 |------|------|------|
@@ -64,7 +64,8 @@
 | 12+6M+1 | `p2wins` | Player2 累计胜场 |
 | 12+6M+2 | `flags` | 见下 |
 | 12+6M+3 | `bgMode` | 昼夜背景：0=夜晚，1=白天 |
-| 12+6M+4 | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
+| 12+6M+4 | `easterEgg` | 彩蛋地图：0=否，1=是（本局） |
+| 12+6M+5 | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
 
 > 其中 `M = BULLET_MAX`。
 
@@ -80,6 +81,12 @@
 - 仅在**主菜单选择"进入游戏"的瞬间**采样光敏电阻 `Rop`（`GetADC().Rop`，10bit）。
 - `Rop > LIGHT_THRESHOLD(30)` → `bgMode = 1`（白天）；否则 `bgMode = 0`（夜晚）。
 - 游戏过程中亮度变化**不影响**已确定的 `bgMode`。
+
+`easterEgg`（彩蛋模式）：
+
+- 触发：从机霍尔（靠近/离开）→ 从机红外发魔数 `0xE1` → 主机红外收到并校验后武装。
+- 开局即消耗：主菜单"进入游戏"时若已武装，本局 `easterEgg=1` 并清零武装；一次性。
+- `easterEgg=1` 时 PC **忽略 `bgMode`**：背景纯白、洞固定黑洞（引力与夜晚一致）、飞船/子弹/HUD 用白天深色主题。
 
 `flags` 位定义：
 

@@ -10,6 +10,7 @@
 #include "sin_table.h"
 #include "config.h"
 #include <math.h>   /* sqrt(引力方向归一化用) */
+#include "IR.h"     /* 彩蛋红外接收 */
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
 
@@ -24,15 +25,19 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define HEAD_SLV0   0xA5
 #define HEAD_SLV1   0x5A
 
+/* 彩蛋魔数(红外) */
+#define EASTER_MAGIC 0xE1
+
 /* Host->PC 状态帧布局, 全部由 BULLET_MAX 推导(避免改配置时帧错位):
- * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + 校验和1 */
+ * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + easterEgg1 + 校验和1 */
 #define FRAME_BULLET_BASE  12
 #define FRAME_BULLET_BYTES (BULLET_MAX * 3)
 #define FRAME_P1WINS       (FRAME_BULLET_BASE + 2 * FRAME_BULLET_BYTES)
 #define FRAME_P2WINS       (FRAME_P1WINS + 1)
 #define FRAME_FLAGS        (FRAME_P2WINS + 1)
 #define FRAME_BGMODE       (FRAME_FLAGS + 1)
-#define FRAME_TX_LEN       (FRAME_BGMODE + 2)   /* +1 校验和 */
+#define FRAME_EASTER       (FRAME_BGMODE + 1)
+#define FRAME_TX_LEN       (FRAME_EASTER + 2)   /* +1 校验和 */
 
 /* 昼夜背景模式 */
 #define BG_NIGHT  0
@@ -84,12 +89,16 @@ xdata unsigned char p1_fire_edge;  /* P1 开火边沿标志 */
 xdata unsigned char p1wins, p2wins;
 xdata unsigned char g_flags;       /* bit0/1 爆炸特效, bit2/3 胜者 */
 xdata unsigned char g_bgMode;      /* 背景模式: BG_NIGHT/BG_DAY (开始游戏瞬间由光敏判定) */
+xdata unsigned char g_easterArmed; /* 彩蛋已武装(红外触发, 开局消耗) */
+xdata unsigned char g_easterEgg;   /* 本局彩蛋地图标志(0/1) */
+xdata unsigned char g_led_run;     /* 彩蛋武装流水灯位(菜单态) */
 xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
 xdata unsigned char exit_tick;     /* EXITED 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
 
 xdata unsigned char uart2_rx[4];   /* Slave 按键帧接收缓冲 */
 xdata unsigned char uart1_tx[FRAME_TX_LEN];  /* Host->PC 发送缓冲(须全局, 异步发送期间不覆盖) */
+xdata unsigned char ir_rx[1];      /* 彩蛋红外接收缓冲 */
 code  unsigned char slv_head[2] = {HEAD_SLV0, HEAD_SLV1};
 
 /* ================= 随机数 (简单 LCG) ================= */
@@ -120,6 +129,9 @@ void menu_confirm(void) {
             /* 开始游戏瞬间按当前亮度判定昼夜背景(游戏过程中亮度变化不影响) */
             adc_val = GetADC();
             g_bgMode = (adc_val.Rop > LIGHT_THRESHOLD) ? BG_DAY : BG_NIGHT;
+            /* 彩蛋武装则本局进入彩蛋地图并消耗(一次性) */
+            g_easterEgg = g_easterArmed;
+            g_easterArmed = 0;
             ship1.x = 64;  ship1.y = 128; ship1.vx = 0; ship1.vy = 0;
             ship1.ang = 0; ship1.lives = LIVES_MAX; ship1.respawn = 0; ship1.active = 1;
             ship2.x = 192; ship2.y = 128; ship2.vx = 0; ship2.vy = 0;
@@ -251,8 +263,8 @@ void update_ship(Ship *s, unsigned char keys) {
     if (r2 >= (float)(GRAVITY_MIN_R * GRAVITY_MIN_R)) r = sqrt(r2);
     else r = (float)GRAVITY_MIN_R;
     f = GRAVITY / (r * r);
-    if (g_bgMode == BG_DAY) {
-        /* 白洞斥力: 方向 = 洞->飞船 = (-gx, -gy) */
+    if (g_bgMode == BG_DAY && !g_easterEgg) {
+        /* 白洞斥力: 方向 = 洞->飞船 = (-gx, -gy); 彩蛋地图固定黑洞, 不走此分支 */
         s->vx -= f * gx / r;
         s->vy -= f * gy / r;
     } else {
@@ -373,6 +385,7 @@ void send_frame(void) {
     uart1_tx[FRAME_P2WINS] = p2wins;
     uart1_tx[FRAME_FLAGS] = g_flags;
     uart1_tx[FRAME_BGMODE] = g_bgMode;
+    uart1_tx[FRAME_EASTER] = g_easterEgg;
     sum = 0;
     for (i = 0; i < (FRAME_TX_LEN - 1); i++) sum += uart1_tx[i];
     uart1_tx[FRAME_TX_LEN - 1] = sum;
@@ -499,9 +512,26 @@ void cb_uart2(void) {
     }
 }
 
+void cb_ir(void) {
+    /* 收到红外数据包: 校验魔数 -> 武装彩蛋(仅 0->1 转变时蜂鸣提示) */
+    if (ir_rx[0] == EASTER_MAGIC) {
+        if (g_easterArmed == 0) SetBeep(1600, 15);
+        g_easterArmed = 1;
+    }
+}
+
 void cb_led(void) {
-    /* LED: 最高位指示 RS485 在线, 低4位指示当前菜单项(菜单态) */
-    unsigned char led = 0;
+    unsigned char led;
+    /* 菜单态且彩蛋已武装: LED 流水灯 (l0->l1->...->l7->l0 循环) */
+    if (g_state == ST_MENU && g_easterArmed) {
+        if (g_led_run == 0) g_led_run = 1;
+        led = g_led_run;
+        g_led_run = (g_led_run == 0x80) ? 0 : (g_led_run << 1);
+        LedPrint(led);
+        return;
+    }
+    /* 常规: 最高位指示 RS485 在线, 低4位指示当前菜单项(菜单态) */
+    led = 0;
     if (rs485_timeout > 0) led |= 0x80;
     if (g_state == ST_MENU) led |= (1 << g_menuSel);
     LedPrint(led);
@@ -533,6 +563,8 @@ void main(void) {
     Uart1Init(115200);
     Uart2Init(38400, Uart2Usedfor485);
     SetUart2Rxd(uart2_rx, 4, slv_head, 2);
+    IrInit(NEC_R05d);
+    SetIrRxd(ir_rx, 1);
 
     init_nvm();
 
@@ -542,6 +574,9 @@ void main(void) {
     p1_fire_edge = 0;
     g_flags = 0;
     g_bgMode = BG_NIGHT;
+    g_easterArmed = 0;
+    g_easterEgg = 0;
+    g_led_run = 0;
     gameover_tick = 0;
     exit_tick = 0;
     rs485_timeout = 0;
@@ -557,6 +592,7 @@ void main(void) {
     SetEventCallBack(enumEventKey, cb_key);
     SetEventCallBack(enumEventNav, cb_nav);
     SetEventCallBack(enumEventUart2Rxd, cb_uart2);
+    SetEventCallBack(enumEventIrRxd, cb_ir);
     SetEventCallBack(enumEventSys100mS, cb_led);
 
     MySTC_Init();
