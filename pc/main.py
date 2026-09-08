@@ -14,6 +14,37 @@ import time
 
 import serial
 
+from config import (
+    BLACKHOLE_RADIUS,
+    BLACKHOLE_X,
+    BLACKHOLE_Y,
+    BULLET_RADIUS,
+    COLOR_BG_GAMEOVER,
+    COLOR_BG_GAME,
+    COLOR_BG_MENU,
+    COLOR_BLACKHOLE_FILL,
+    COLOR_BLACKHOLE_RING,
+    COLOR_BULLET_P1,
+    COLOR_BULLET_P2,
+    COLOR_EXPLOSION_INNER,
+    COLOR_EXPLOSION_OUTER,
+    COLOR_HUD_P1,
+    COLOR_HUD_P2,
+    COLOR_MENU_SELECTED,
+    COLOR_MENU_UNSELECTED,
+    COLOR_MENU_WINS,
+    COLOR_P1_SHIP,
+    COLOR_P2_SHIP,
+    COLOR_TITLE,
+    EXPLOSION_INNER_RATIO,
+    EXPLOSION_RADIUS,
+    FIELD,
+    MENU_ITEMS,
+    SHIP_SIZE,
+    WINDOW_HEIGHT,
+    WINDOW_WIDTH,
+)
+
 # ================= 协议常量 =================
 HEAD_PC0 = 0xAA
 HEAD_PC1 = 0x55
@@ -29,12 +60,6 @@ FLAG_P1_DEAD = 0x01
 FLAG_P2_DEAD = 0x02
 FLAG_P1_WIN = 0x04
 FLAG_P2_WIN = 0x08
-
-# 逻辑场坐标 0~255 映射到窗口
-FIELD = 256
-
-# 菜单项名称
-MENU_ITEMS = ["Start Game", "Clear Wins", "Exit"]
 
 # 朝向角: 0=朝右, 逆时针增大, 1 字节 0~255 表示 0~360°
 def angle_to_rad(a: int) -> float:
@@ -107,7 +132,7 @@ def map_coord(v: int, scale: float, offset: float) -> float:
 
 
 class Renderer:
-    def __init__(self, width: int = 800, height: int = 800) -> None:
+    def __init__(self, width: int = WINDOW_WIDTH, height: int = WINDOW_HEIGHT) -> None:
         import pygame
 
         self.pygame = pygame
@@ -138,7 +163,7 @@ class Renderer:
             return
         cx, cy = self.to_screen(ship.x, ship.y)
         ang = angle_to_rad(ship.ang)
-        size = 10.0 * self.scale
+        size = SHIP_SIZE * self.scale
         # 方向向量: (cos, -sin), 与 Host 物理引擎 diry=-sin 保持一致 (屏幕 Y 向下)
         dirx = math.cos(ang)
         diry = -math.sin(ang)
@@ -151,65 +176,65 @@ class Renderer:
 
     def draw_explosion(self, x: int, y: int) -> None:
         cx, cy = self.to_screen(x, y)
-        r = 8.0 * self.scale
-        self.pygame.draw.circle(self.screen, (255, 200, 0), (int(cx), int(cy)), int(r))
-        self.pygame.draw.circle(self.screen, (255, 120, 0), (int(cx), int(cy)), int(r * 0.6))
+        r = EXPLOSION_RADIUS * self.scale
+        self.pygame.draw.circle(self.screen, COLOR_EXPLOSION_OUTER, (int(cx), int(cy)), int(r))
+        self.pygame.draw.circle(self.screen, COLOR_EXPLOSION_INNER, (int(cx), int(cy)), int(r * EXPLOSION_INNER_RATIO))
 
     def draw_bullet(self, b: Bullet, color) -> None:
         if not b.active:
             return
         cx, cy = self.to_screen(b.x, b.y)
-        self.pygame.draw.circle(self.screen, color, (int(cx), int(cy)), int(3.0 * self.scale))
+        self.pygame.draw.circle(self.screen, color, (int(cx), int(cy)), int(BULLET_RADIUS * self.scale))
 
     def draw_blackhole(self) -> None:
-        cx, cy = self.to_screen(128, 128)
-        r = 12.0 * self.scale
-        self.pygame.draw.circle(self.screen, (0, 0, 0), (int(cx), int(cy)), int(r))
-        self.pygame.draw.circle(self.screen, (120, 0, 120), (int(cx), int(cy)), int(r), 2)
+        cx, cy = self.to_screen(BLACKHOLE_X, BLACKHOLE_Y)
+        r = BLACKHOLE_RADIUS * self.scale
+        self.pygame.draw.circle(self.screen, COLOR_BLACKHOLE_FILL, (int(cx), int(cy)), int(r))
+        self.pygame.draw.circle(self.screen, COLOR_BLACKHOLE_RING, (int(cx), int(cy)), int(r), 2)
 
     def draw_menu(self, gs: GameState) -> None:
-        self.screen.fill((10, 10, 30))
-        title = self.big_font.render("SPACEWAR!", True, (255, 255, 255))
+        self.screen.fill(COLOR_BG_MENU)
+        title = self.big_font.render("SPACEWAR!", True, COLOR_TITLE)
         self.screen.blit(title, (self.width // 2 - title.get_width() // 2, 80))
         for i, item in enumerate(MENU_ITEMS):
-            color = (255, 255, 0) if i == gs.menu_sel else (180, 180, 180)
+            color = COLOR_MENU_SELECTED if i == gs.menu_sel else COLOR_MENU_UNSELECTED
             txt = self.font.render(("> " if i == gs.menu_sel else "  ") + item, True, color)
             self.screen.blit(txt, (self.width // 2 - 120, 180 + i * 40))
         wins = self.font.render(
-            f"P1 wins: {gs.p1_wins}    P2 wins: {gs.p2_wins}", True, (200, 200, 255)
+            f"P1 wins: {gs.p1_wins}    P2 wins: {gs.p2_wins}", True, COLOR_MENU_WINS
         )
         self.screen.blit(wins, (self.width // 2 - wins.get_width() // 2, 380))
 
     def draw_game(self, gs: GameState) -> None:
-        self.screen.fill((0, 0, 0))
+        self.screen.fill(COLOR_BG_GAME)
         self.draw_blackhole()
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:
-            self.draw_ship(gs.p1, (0, 255, 120))
+            self.draw_ship(gs.p1, COLOR_P1_SHIP)
         if gs.p2.dead:
             self.draw_explosion(gs.p2.x, gs.p2.y)
         else:
-            self.draw_ship(gs.p2, (255, 80, 80))
-        self.draw_bullet(gs.b1, (120, 255, 120))
-        self.draw_bullet(gs.b2, (255, 160, 160))
+            self.draw_ship(gs.p2, COLOR_P2_SHIP)
+        self.draw_bullet(gs.b1, COLOR_BULLET_P1)
+        self.draw_bullet(gs.b2, COLOR_BULLET_P2)
         # HUD
-        hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, (0, 255, 120))
-        hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, (255, 80, 80))
+        hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, COLOR_HUD_P1)
+        hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, COLOR_HUD_P2)
         self.screen.blit(hud1, (10, 10))
         self.screen.blit(hud2, (self.width - hud2.get_width() - 10, 10))
 
     def draw_gameover(self, gs: GameState) -> None:
-        self.screen.fill((20, 20, 20))
+        self.screen.fill(COLOR_BG_GAMEOVER)
         if gs.flags & FLAG_P1_WIN:
-            txt = self.big_font.render("PLAYER 1 WINS!", True, (0, 255, 120))
+            txt = self.big_font.render("PLAYER 1 WINS!", True, COLOR_P1_SHIP)
         elif gs.flags & FLAG_P2_WIN:
-            txt = self.big_font.render("PLAYER 2 WINS!", True, (255, 80, 80))
+            txt = self.big_font.render("PLAYER 2 WINS!", True, COLOR_P2_SHIP)
         else:
-            txt = self.big_font.render("GAME OVER", True, (255, 255, 255))
+            txt = self.big_font.render("GAME OVER", True, COLOR_TITLE)
         self.screen.blit(txt, (self.width // 2 - txt.get_width() // 2, self.height // 2 - 40))
         wins = self.font.render(
-            f"P1 wins: {gs.p1_wins}    P2 wins: {gs.p2_wins}", True, (200, 200, 255)
+            f"P1 wins: {gs.p1_wins}    P2 wins: {gs.p2_wins}", True, COLOR_MENU_WINS
         )
         self.screen.blit(wins, (self.width // 2 - wins.get_width() // 2, self.height // 2 + 20))
 
@@ -285,7 +310,7 @@ def main() -> int:
         return 0
 
     gs = GameState()
-    renderer = Renderer(800, 800)
+    renderer = Renderer(WINDOW_WIDTH, WINDOW_HEIGHT)
 
     src = None
     if not args.sim:

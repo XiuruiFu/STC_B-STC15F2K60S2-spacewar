@@ -1,0 +1,49 @@
+"""Spacewar! PC 渲染器统一配置 (E0 Config Infrastructure).
+
+集中存放渲染参数（窗口尺寸、比例、颜色主题等），便于实践中动态调整。
+后续 E2 昼夜背景的两套配色也在此扩展。
+"""
+
+# ================= 窗口 =================
+WINDOW_WIDTH = 800
+WINDOW_HEIGHT = 800
+
+# ================= 逻辑场域 =================
+FIELD = 256  # 与 Host 逻辑场 0~255 对应，PC 按屏幕比例缩放
+
+# ================= 渲染几何 (逻辑单位, 实际像素 = 值 * scale) =================
+SHIP_SIZE = 10.0
+BULLET_RADIUS = 3.0
+BLACKHOLE_RADIUS = 12.0
+EXPLOSION_RADIUS = 8.0
+EXPLOSION_INNER_RATIO = 0.6
+
+# 黑洞逻辑中心坐标 (与 Host 保持一致)
+BLACKHOLE_X = 128
+BLACKHOLE_Y = 128
+
+# ================= 菜单项名称 =================
+MENU_ITEMS = ["Start Game", "Clear Wins", "Exit"]
+
+# ================= 颜色主题 (RGB) =================
+COLOR_BG_MENU = (10, 10, 30)
+COLOR_BG_GAME = (0, 0, 0)
+COLOR_BG_GAMEOVER = (20, 20, 20)
+
+COLOR_TITLE = (255, 255, 255)
+COLOR_MENU_SELECTED = (255, 255, 0)
+COLOR_MENU_UNSELECTED = (180, 180, 180)
+COLOR_MENU_WINS = (200, 200, 255)
+
+COLOR_P1_SHIP = (0, 255, 120)
+COLOR_P2_SHIP = (255, 80, 80)
+COLOR_BULLET_P1 = (120, 255, 120)
+COLOR_BULLET_P2 = (255, 160, 160)
+COLOR_HUD_P1 = (0, 255, 120)
+COLOR_HUD_P2 = (255, 80, 80)
+
+COLOR_BLACKHOLE_FILL = (0, 0, 0)
+COLOR_BLACKHOLE_RING = (120, 0, 120)
+
+COLOR_EXPLOSION_OUTER = (255, 200, 0)
+COLOR_EXPLOSION_INNER = (255, 120, 0)

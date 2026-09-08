@@ -8,6 +8,7 @@
 #include "uart2.H"
 #include "DS1302.H"
 #include "sin_table.h"
+#include "config.h"
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
 
@@ -36,21 +37,6 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define K_RIGHT 0x10
 #define K_MENUUP    0x20   /* 菜单上移 (NavLeft) */
 #define K_MENUDOWN  0x40   /* 菜单下移 (NavRight) */
-
-/* ================= 物理常量 ================= */
-#define FIELD        256
-#define BH_X         128
-#define BH_Y         128
-#define BH_R         12
-#define SHIP_R       6
-#define BULLET_R     2
-#define THRUST       0.05f
-#define ROT_SPEED    2
-#define MAX_SPEED    2.0f
-#define BULLET_SPEED 2.0f
-#define BULLET_LIFE  150
-#define RESPAWN_TICKS 100
-#define LIVES_MAX    3
 
 /* ================= 飞船结构 ================= */
 typedef struct {
