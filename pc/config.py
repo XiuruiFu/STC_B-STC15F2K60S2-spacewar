@@ -28,6 +28,11 @@ BLACKHOLE_Y = 128
 # ================= 菜单项名称 =================
 MENU_ITEMS = ["Start Game", "Clear Wins", "Exit"]
 
+# ================= 背景图片 (7.1) =================
+BG_IMAGE_DIR = "assets"      # 相对 pc/ 目录
+BG_IMAGE_DAY = "day.jpg"     # 白天背景图(缺失时回退纯色背景)
+BG_IMAGE_NIGHT = "night.jpg" # 夜晚背景图(缺失时回退纯色背景)
+
 # ================= 颜色主题 (RGB) =================
 COLOR_BG_MENU = (10, 10, 30)
 COLOR_BG_GAME = (0, 0, 0)

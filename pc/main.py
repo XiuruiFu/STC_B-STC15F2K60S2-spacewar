@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import sys
 import time
 
 import serial
 
 from config import (
+    BG_IMAGE_DAY,
+    BG_IMAGE_DIR,
+    BG_IMAGE_NIGHT,
     BLACKHOLE_RADIUS,
     BLACKHOLE_X,
     BLACKHOLE_Y,
@@ -174,6 +178,18 @@ class Renderer:
             self.snd_explode = pygame.mixer.Sound(buffer=_gen_tone(150, 120))
         except Exception:
             pass
+        # 背景图片: 缩放铺满窗口; 缺失/加载失败时置 None, 绘制回退纯色背景
+        self.bg_day = self._load_bg(BG_IMAGE_DAY, width, height)
+        self.bg_night = self._load_bg(BG_IMAGE_NIGHT, width, height)
+
+    def _load_bg(self, name: str, width: int, height: int):
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), BG_IMAGE_DIR, name)
+            img = self.pygame.image.load(path)
+            img = self.pygame.transform.smoothscale(img, (width, height))
+            return img.convert()
+        except Exception:
+            return None
 
     def to_screen(self, x: int, y: int):
         return (map_coord(x, self.scale, self.ox), map_coord(y, self.scale, self.oy))
@@ -238,6 +254,7 @@ class Renderer:
             b2c = COLOR_BULLET_P2_DAY
             h1c = COLOR_HUD_P1_DAY
             h2c = COLOR_HUD_P2_DAY
+            bg_img = self.bg_day
         else:
             bg = COLOR_BG_GAME
             p1c = COLOR_P1_SHIP
@@ -246,7 +263,11 @@ class Renderer:
             b2c = COLOR_BULLET_P2
             h1c = COLOR_HUD_P1
             h2c = COLOR_HUD_P2
-        self.screen.fill(bg)
+            bg_img = self.bg_night
+        if bg_img is not None:
+            self.screen.blit(bg_img, (0, 0))
+        else:
+            self.screen.fill(bg)
         self.draw_blackhole(gs.bg_mode == BG_DAY)
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
