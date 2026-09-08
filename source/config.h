@@ -24,8 +24,8 @@
 
 /* ================= 子弹 ================= */
 #define BULLET_SPEED    2.0f    /* 子弹速度 */
-#define BULLET_LIFE     112     /* 子弹存活时长 (10ms ticks, 112 = 1.12s, 原150的75%) */
-#define BULLET_MAX      3       /* 每船同时在场子弹上限 */
+#define BULLET_LIFE     200     /* 子弹存活时长 (10ms ticks, 200 = 2.0s) */
+#define BULLET_MAX      5       /* 每船同时在场子弹上限 (改此值会改变协议帧长, 须同步 pc/config.py 的 BULLET_MAX) */
 
 /* ================= 生命与重生 ================= */
 #define LIVES_MAX       3       /* 每局初始生命数 */

@@ -1,6 +1,6 @@
 """Spacewar! PC Renderer.
 
-仅负责渲染: 通过串口接收 Host 发送的 24 字节状态帧并绘制画面、播放音效。
+仅负责渲染: 通过串口接收 Host 发送的状态帧(长度由 BULLET_MAX 推导)并绘制画面、播放音效。
 物理引擎与状态机均运行在 Host MCU 上。
 
 串口帧格式见 docs/protocol.md。
@@ -18,6 +18,7 @@ from config import (
     BLACKHOLE_RADIUS,
     BLACKHOLE_X,
     BLACKHOLE_Y,
+    BULLET_MAX,
     BULLET_RADIUS,
     COLOR_BG_GAMEOVER,
     COLOR_BG_GAME,
@@ -48,9 +49,12 @@ from config import (
 # ================= 协议常量 =================
 HEAD_PC0 = 0xAA
 HEAD_PC1 = 0x55
-FRAME_LEN = 34
 SER_READ_SIZE = 512
-BULLETS_PER_PLAYER = 3  # 每船同时在场子弹数(与 Host BULLET_MAX 一致)
+BULLETS_PER_PLAYER = BULLET_MAX  # 与 Host BULLET_MAX 一致
+
+# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+校验和1
+FRAME_P1WINS = 12 + 2 * BULLETS_PER_PLAYER * 3
+FRAME_LEN = FRAME_P1WINS + 4
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -118,9 +122,9 @@ class GameState:
             self.bullets[i].x = buf[n + 1]
             self.bullets[i].y = buf[n + 2]
             n += 3
-        self.p1_wins = buf[30]
-        self.p2_wins = buf[31]
-        self.flags = buf[32]
+        self.p1_wins = buf[FRAME_P1WINS]
+        self.p2_wins = buf[FRAME_P1WINS + 1]
+        self.flags = buf[FRAME_P1WINS + 2]
         self.p1.dead = bool(self.flags & FLAG_P1_DEAD)
         self.p2.dead = bool(self.flags & FLAG_P2_DEAD)
         self.frame_ok = True

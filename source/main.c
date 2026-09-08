@@ -23,8 +23,14 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define HEAD_SLV0   0xA5
 #define HEAD_SLV1   0x5A
 
-/* Host->PC 状态帧长度: 帧头2 + state/menuSel2 + 双方飞船8 + 子弹6*3 + 胜场2 + flags1 + 校验和1 */
-#define FRAME_TX_LEN 34
+/* Host->PC 状态帧布局, 全部由 BULLET_MAX 推导(避免改配置时帧错位):
+ * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + 校验和1 */
+#define FRAME_BULLET_BASE  12
+#define FRAME_BULLET_BYTES (BULLET_MAX * 3)
+#define FRAME_P1WINS       (FRAME_BULLET_BASE + 2 * FRAME_BULLET_BYTES)
+#define FRAME_P2WINS       (FRAME_P1WINS + 1)
+#define FRAME_FLAGS        (FRAME_P2WINS + 1)
+#define FRAME_TX_LEN       (FRAME_FLAGS + 2)   /* +1 校验和 */
 
 /* ================= 状态机 ================= */
 #define ST_MENU     0
@@ -315,8 +321,8 @@ void send_frame(void) {
     uart1_tx[9] = (unsigned char)ship2.y;
     uart1_tx[10] = ship2.ang;
     uart1_tx[11] = ship2.lives;
-    /* P1 子弹 3 组 (active,x,y) + P2 子弹 3 组 (active,x,y) */
-    n = 12;
+    /* P1 子弹 + P2 子弹, 各 BULLET_MAX 组 (active,x,y) */
+    n = FRAME_BULLET_BASE;
     for (i = 0; i < BULLET_MAX; i++) {
         uart1_tx[n++] = bullet1[i].active;
         uart1_tx[n++] = (unsigned char)bullet1[i].x;
@@ -327,9 +333,9 @@ void send_frame(void) {
         uart1_tx[n++] = (unsigned char)bullet2[i].x;
         uart1_tx[n++] = (unsigned char)bullet2[i].y;
     }
-    uart1_tx[30] = p1wins;
-    uart1_tx[31] = p2wins;
-    uart1_tx[32] = g_flags;
+    uart1_tx[FRAME_P1WINS] = p1wins;
+    uart1_tx[FRAME_P2WINS] = p2wins;
+    uart1_tx[FRAME_FLAGS] = g_flags;
     sum = 0;
     for (i = 0; i < (FRAME_TX_LEN - 1); i++) sum += uart1_tx[i];
     uart1_tx[FRAME_TX_LEN - 1] = sum;
