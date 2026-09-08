@@ -23,6 +23,9 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define HEAD_SLV0   0xA5
 #define HEAD_SLV1   0x5A
 
+/* Host->PC 状态帧长度: 帧头2 + state/menuSel2 + 双方飞船8 + 子弹6*3 + 胜场2 + flags1 + 校验和1 */
+#define FRAME_TX_LEN 34
+
 /* ================= 状态机 ================= */
 #define ST_MENU     0
 #define ST_PLAYING  1
@@ -58,7 +61,7 @@ typedef struct {
 
 /* ================= 全局状态 ================= */
 xdata Ship ship1, ship2;
-xdata Bullet bullet1, bullet2;
+xdata Bullet bullet1[BULLET_MAX], bullet2[BULLET_MAX];
 
 xdata unsigned char g_state;       /* 状态机 */
 xdata unsigned char g_menuSel;     /* 菜单选中项 */
@@ -73,7 +76,7 @@ xdata unsigned char exit_tick;     /* EXITED 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
 
 xdata unsigned char uart2_rx[4];   /* Slave 按键帧接收缓冲 */
-xdata unsigned char uart1_tx[24];  /* Host->PC 发送缓冲(须全局, 异步发送期间不覆盖) */
+xdata unsigned char uart1_tx[FRAME_TX_LEN];  /* Host->PC 发送缓冲(须全局, 异步发送期间不覆盖) */
 code  unsigned char slv_head[2] = {HEAD_SLV0, HEAD_SLV1};
 
 /* ================= 随机数 (简单 LCG) ================= */
@@ -81,6 +84,12 @@ xdata unsigned int rnd_seed;
 unsigned int rnd(void) {
     rnd_seed = rnd_seed * 1103515245u + 12345u;
     return (rnd_seed >> 8) & 0xFFFF;
+}
+
+/* ================= 子弹工具 ================= */
+void clear_bullets(Bullet *arr) {
+    unsigned char i;
+    for (i = 0; i < BULLET_MAX; i++) arr[i].active = 0;
 }
 
 /* ================= 菜单导航 ================= */
@@ -98,7 +107,8 @@ void menu_confirm(void) {
             ship1.ang = 0; ship1.lives = LIVES_MAX; ship1.respawn = 0; ship1.active = 1;
             ship2.x = 192; ship2.y = 128; ship2.vx = 0; ship2.vy = 0;
             ship2.ang = 128; ship2.lives = LIVES_MAX; ship2.respawn = 0; ship2.active = 1;
-            bullet1.active = 0; bullet2.active = 0;
+            clear_bullets(bullet1);
+            clear_bullets(bullet2);
             g_flags = 0;
             g_state = ST_PLAYING;
             SetBeep(800, 8);
@@ -146,6 +156,14 @@ void fire_bullet(Ship *s, Bullet *b) {
     b->active = 1;
 }
 
+void try_fire(Ship *s, Bullet *arr) {
+    unsigned char i;
+    if (s->active == 0) return;
+    for (i = 0; i < BULLET_MAX; i++) {
+        if (arr[i].active == 0) { fire_bullet(s, &arr[i]); return; }
+    }
+}
+
 /* ================= 环绕边界 ================= */
 float wrap_coord(float v) {
     if (v >= (float)FIELD) v -= (float)FIELD;
@@ -166,12 +184,12 @@ float dist2_wrap(float x1, float y1, float x2, float y2) {
 /* ================= 飞船死亡 ================= */
 void kill_ship(unsigned char player) {
     Ship *s;
-    Bullet *b;
-    if (player == 0) { s = &ship1; b = &bullet1; }
-    else             { s = &ship2; b = &bullet2; }
+    Bullet *barray;
+    if (player == 0) { s = &ship1; barray = bullet1; }
+    else             { s = &ship2; barray = bullet2; }
     if (s->active == 0) return;
     s->lives--;
-    b->active = 0;
+    clear_bullets(barray);
     s->active = 0;
     s->respawn = RESPAWN_TICKS;
     g_flags |= (player == 0) ? 0x01 : 0x02;   /* 爆炸特效 */
@@ -223,28 +241,40 @@ void update_bullet(Bullet *b) {
     else b->active = 0;
 }
 
+void update_bullets(Bullet *arr) {
+    unsigned char i;
+    for (i = 0; i < BULLET_MAX; i++) update_bullet(&arr[i]);
+}
+
 /* ================= 碰撞检测 ================= */
 void check_collisions(void) {
-    float r2;
+    float r2, bh_r2, bhr_b;
+    unsigned char i;
+    bh_r2 = (float)(BH_R+SHIP_R)*(BH_R+SHIP_R);
+    bhr_b = (float)(BH_R+BULLET_R)*(BH_R+BULLET_R);
     /* 黑洞吞飞船 */
-    if (ship1.active && dist2_wrap(ship1.x, ship1.y, (float)BH_X, (float)BH_Y) < (float)(BH_R+SHIP_R)*(BH_R+SHIP_R))
+    if (ship1.active && dist2_wrap(ship1.x, ship1.y, (float)BH_X, (float)BH_Y) < bh_r2)
         kill_ship(0);
-    if (ship2.active && dist2_wrap(ship2.x, ship2.y, (float)BH_X, (float)BH_Y) < (float)(BH_R+SHIP_R)*(BH_R+SHIP_R))
+    if (ship2.active && dist2_wrap(ship2.x, ship2.y, (float)BH_X, (float)BH_Y) < bh_r2)
         kill_ship(1);
     /* 黑洞吞子弹 */
-    if (bullet1.active && dist2_wrap(bullet1.x, bullet1.y, (float)BH_X, (float)BH_Y) < (float)(BH_R+BULLET_R)*(BH_R+BULLET_R))
-        bullet1.active = 0;
-    if (bullet2.active && dist2_wrap(bullet2.x, bullet2.y, (float)BH_X, (float)BH_Y) < (float)(BH_R+BULLET_R)*(BH_R+BULLET_R))
-        bullet2.active = 0;
+    for (i = 0; i < BULLET_MAX; i++) {
+        if (bullet1[i].active && dist2_wrap(bullet1[i].x, bullet1[i].y, (float)BH_X, (float)BH_Y) < bhr_b)
+            bullet1[i].active = 0;
+        if (bullet2[i].active && dist2_wrap(bullet2[i].x, bullet2[i].y, (float)BH_X, (float)BH_Y) < bhr_b)
+            bullet2[i].active = 0;
+    }
     /* 子弹命中飞船 */
     r2 = (float)(SHIP_R+BULLET_R)*(SHIP_R+BULLET_R);
-    if (bullet1.active && ship2.active && dist2_wrap(bullet1.x, bullet1.y, ship2.x, ship2.y) < r2) {
-        bullet1.active = 0;
-        kill_ship(1);
-    }
-    if (bullet2.active && ship1.active && dist2_wrap(bullet2.x, bullet2.y, ship1.x, ship1.y) < r2) {
-        bullet2.active = 0;
-        kill_ship(0);
+    for (i = 0; i < BULLET_MAX; i++) {
+        if (bullet1[i].active && ship2.active && dist2_wrap(bullet1[i].x, bullet1[i].y, ship2.x, ship2.y) < r2) {
+            bullet1[i].active = 0;
+            kill_ship(1);
+        }
+        if (bullet2[i].active && ship1.active && dist2_wrap(bullet2[i].x, bullet2[i].y, ship1.x, ship1.y) < r2) {
+            bullet2[i].active = 0;
+            kill_ship(0);
+        }
     }
 }
 
@@ -272,7 +302,7 @@ void check_winner(void) {
 
 /* ================= 组帧发送 Host->PC ================= */
 void send_frame(void) {
-    unsigned char sum, i;
+    unsigned char sum, i, n;
     uart1_tx[0] = HEAD_PC0;
     uart1_tx[1] = HEAD_PC1;
     uart1_tx[2] = g_state;
@@ -285,21 +315,25 @@ void send_frame(void) {
     uart1_tx[9] = (unsigned char)ship2.y;
     uart1_tx[10] = ship2.ang;
     uart1_tx[11] = ship2.lives;
-    uart1_tx[12] = bullet1.active;
-    uart1_tx[13] = (unsigned char)bullet1.x;
-    uart1_tx[14] = (unsigned char)bullet1.y;
-    uart1_tx[15] = 0;
-    uart1_tx[16] = bullet2.active;
-    uart1_tx[17] = (unsigned char)bullet2.x;
-    uart1_tx[18] = (unsigned char)bullet2.y;
-    uart1_tx[19] = 0;
-    uart1_tx[20] = p1wins;
-    uart1_tx[21] = p2wins;
-    uart1_tx[22] = g_flags;
+    /* P1 子弹 3 组 (active,x,y) + P2 子弹 3 组 (active,x,y) */
+    n = 12;
+    for (i = 0; i < BULLET_MAX; i++) {
+        uart1_tx[n++] = bullet1[i].active;
+        uart1_tx[n++] = (unsigned char)bullet1[i].x;
+        uart1_tx[n++] = (unsigned char)bullet1[i].y;
+    }
+    for (i = 0; i < BULLET_MAX; i++) {
+        uart1_tx[n++] = bullet2[i].active;
+        uart1_tx[n++] = (unsigned char)bullet2[i].x;
+        uart1_tx[n++] = (unsigned char)bullet2[i].y;
+    }
+    uart1_tx[30] = p1wins;
+    uart1_tx[31] = p2wins;
+    uart1_tx[32] = g_flags;
     sum = 0;
-    for (i = 0; i < 23; i++) sum += uart1_tx[i];
-    uart1_tx[23] = sum;
-    Uart1Print(uart1_tx, 24);
+    for (i = 0; i < (FRAME_TX_LEN - 1); i++) sum += uart1_tx[i];
+    uart1_tx[FRAME_TX_LEN - 1] = sum;
+    Uart1Print(uart1_tx, FRAME_TX_LEN);
 }
 
 /* ================= 数码管显示胜场 ================= */
@@ -337,17 +371,17 @@ void cb_10ms(void) {
         /* P1 开火边沿 */
         if (p1_fire_edge) {
             p1_fire_edge = 0;
-            if (bullet1.active == 0 && ship1.active) fire_bullet(&ship1, &bullet1);
+            try_fire(&ship1, bullet1);
         }
         /* P2 开火边沿 */
         if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) {
-            if (bullet2.active == 0 && ship2.active) fire_bullet(&ship2, &bullet2);
+            try_fire(&ship2, bullet2);
         }
 
         update_ship(&ship1, p1_keys);
         update_ship(&ship2, p2_keys);
-        update_bullet(&bullet1);
-        update_bullet(&bullet2);
+        update_bullets(bullet1);
+        update_bullets(bullet2);
         check_collisions();
         check_winner();
     }
@@ -469,7 +503,8 @@ void main(void) {
     rs485_timeout = 0;
     rnd_seed = 0x1234;
     ship1.active = 0; ship2.active = 0;
-    bullet1.active = 0; bullet2.active = 0;
+    clear_bullets(bullet1);
+    clear_bullets(bullet2);
     SetDisplayerArea(0, 7);
     Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);
     LedPrint(0);

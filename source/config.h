@@ -24,8 +24,8 @@
 
 /* ================= 子弹 ================= */
 #define BULLET_SPEED    2.0f    /* 子弹速度 */
-#define BULLET_LIFE     150     /* 子弹存活时长 (10ms ticks, 150 = 1.5s) */
-#define BULLET_MAX      1       /* 每船同时在场子弹上限 (E1 将改为 3) */
+#define BULLET_LIFE     112     /* 子弹存活时长 (10ms ticks, 112 = 1.12s, 原150的75%) */
+#define BULLET_MAX      3       /* 每船同时在场子弹上限 */
 
 /* ================= 生命与重生 ================= */
 #define LIVES_MAX       3       /* 每局初始生命数 */

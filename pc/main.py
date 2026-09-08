@@ -48,8 +48,9 @@ from config import (
 # ================= 协议常量 =================
 HEAD_PC0 = 0xAA
 HEAD_PC1 = 0x55
-FRAME_LEN = 24
+FRAME_LEN = 34
 SER_READ_SIZE = 512
+BULLETS_PER_PLAYER = 3  # 每船同时在场子弹数(与 Host BULLET_MAX 一致)
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -88,8 +89,7 @@ class GameState:
         self.menu_sel = 0
         self.p1 = Ship()
         self.p2 = Ship()
-        self.b1 = Bullet()
-        self.b2 = Bullet()
+        self.bullets = [Bullet() for _ in range(BULLETS_PER_PLAYER * 2)]
         self.p1_wins = 0
         self.p2_wins = 0
         self.flags = 0
@@ -100,7 +100,7 @@ class GameState:
             return False
         if buf[0] != HEAD_PC0 or buf[1] != HEAD_PC1:
             return False
-        if sum(buf[0:23]) & 0xFF != buf[23]:
+        if sum(buf[0:FRAME_LEN - 1]) & 0xFF != buf[FRAME_LEN - 1]:
             return False
         self.state = buf[2]
         self.menu_sel = buf[3]
@@ -112,15 +112,15 @@ class GameState:
         self.p2.y = buf[9]
         self.p2.ang = buf[10]
         self.p2.lives = buf[11]
-        self.b1.active = buf[12] != 0
-        self.b1.x = buf[13]
-        self.b1.y = buf[14]
-        self.b2.active = buf[16] != 0
-        self.b2.x = buf[17]
-        self.b2.y = buf[18]
-        self.p1_wins = buf[20]
-        self.p2_wins = buf[21]
-        self.flags = buf[22]
+        n = 12
+        for i in range(BULLETS_PER_PLAYER * 2):
+            self.bullets[i].active = buf[n] != 0
+            self.bullets[i].x = buf[n + 1]
+            self.bullets[i].y = buf[n + 2]
+            n += 3
+        self.p1_wins = buf[30]
+        self.p2_wins = buf[31]
+        self.flags = buf[32]
         self.p1.dead = bool(self.flags & FLAG_P1_DEAD)
         self.p2.dead = bool(self.flags & FLAG_P2_DEAD)
         self.frame_ok = True
@@ -216,8 +216,10 @@ class Renderer:
             self.draw_explosion(gs.p2.x, gs.p2.y)
         else:
             self.draw_ship(gs.p2, COLOR_P2_SHIP)
-        self.draw_bullet(gs.b1, COLOR_BULLET_P1)
-        self.draw_bullet(gs.b2, COLOR_BULLET_P2)
+        for b in gs.bullets[:BULLETS_PER_PLAYER]:
+            self.draw_bullet(b, COLOR_BULLET_P1)
+        for b in gs.bullets[BULLETS_PER_PLAYER:]:
+            self.draw_bullet(b, COLOR_BULLET_P2)
         # HUD
         hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, COLOR_HUD_P1)
         hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, COLOR_HUD_P2)

@@ -196,7 +196,7 @@ project/
 - **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
 - **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
 - **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
-- **协议帧**：Slave→Host 4 字节；Host→PC 24 字节。详见 `docs/protocol.md`（三端唯一权威契约）。
+- **协议帧**：Slave→Host 4 字节；Host→PC 34 字节（E1 后：6 发子弹 × 3 字节）。详见 `docs/protocol.md`（三端唯一权威契约）。
 - **可调物理常量**（当前散落在 `source/main.c`，E0 将迁入 `config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE=150`（子弹寿命 ticks）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）。
 
 ---
