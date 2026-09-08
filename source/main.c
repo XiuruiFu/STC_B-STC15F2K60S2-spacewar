@@ -9,6 +9,7 @@
 #include "DS1302.H"
 #include "sin_table.h"
 #include "config.h"
+#include <math.h>   /* sqrt(引力方向归一化用) */
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
 
@@ -222,7 +223,7 @@ void kill_ship(unsigned char player) {
 
 /* ================= 更新飞船 ================= */
 void update_ship(Ship *s, unsigned char keys) {
-    float dirx, diry;
+    float dirx, diry, gx, gy, r, r2, f;
     unsigned char idx;
     if (s->active == 0) {
         if (s->respawn > 0) {
@@ -241,6 +242,23 @@ void update_ship(Ship *s, unsigned char keys) {
         diry = -sin_table[s->ang];
         if (keys & K_FWD)  { s->vx += dirx * THRUST; s->vy += diry * THRUST; }
         if (keys & K_BACK) { s->vx -= dirx * THRUST; s->vy -= diry * THRUST; }
+    }
+    /* 引力/斥力 (洞在中心, 普通欧氏方向即可, 环绕分支不生效):
+     * 力大小 F = GRAVITY / max(r², GRAVITY_MIN_R²); 仅影响飞船, 受 MAX_SPEED 钳制 */
+    gx = (float)BH_X - s->x;   /* 飞船->洞 向量 */
+    gy = (float)BH_Y - s->y;
+    r2 = gx*gx + gy*gy;
+    if (r2 >= (float)(GRAVITY_MIN_R * GRAVITY_MIN_R)) r = sqrt(r2);
+    else r = (float)GRAVITY_MIN_R;
+    f = GRAVITY / (r * r);
+    if (g_bgMode == BG_DAY) {
+        /* 白洞斥力: 方向 = 洞->飞船 = (-gx, -gy) */
+        s->vx -= f * gx / r;
+        s->vy -= f * gy / r;
+    } else {
+        /* 黑洞引力: 方向 = 飞船->洞 = (gx, gy) */
+        s->vx += f * gx / r;
+        s->vy += f * gy / r;
     }
     /* 限速 */
     if (s->vx > MAX_SPEED) s->vx = MAX_SPEED;

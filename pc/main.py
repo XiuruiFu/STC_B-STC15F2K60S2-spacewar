@@ -44,6 +44,8 @@ from config import (
     COLOR_P2_SHIP,
     COLOR_P2_SHIP_DAY,
     COLOR_TITLE,
+    COLOR_WHITEHOLE_FILL,
+    COLOR_WHITEHOLE_RING,
     EXPLOSION_INNER_RATIO,
     EXPLOSION_RADIUS,
     FIELD,
@@ -204,11 +206,15 @@ class Renderer:
         cx, cy = self.to_screen(b.x, b.y)
         self.pygame.draw.circle(self.screen, color, (int(cx), int(cy)), int(BULLET_RADIUS * self.scale))
 
-    def draw_blackhole(self) -> None:
+    def draw_blackhole(self, is_white: bool) -> None:
         cx, cy = self.to_screen(BLACKHOLE_X, BLACKHOLE_Y)
         r = BLACKHOLE_RADIUS * self.scale
-        self.pygame.draw.circle(self.screen, COLOR_BLACKHOLE_FILL, (int(cx), int(cy)), int(r))
-        self.pygame.draw.circle(self.screen, COLOR_BLACKHOLE_RING, (int(cx), int(cy)), int(r), 2)
+        if is_white:
+            fill, ring = COLOR_WHITEHOLE_FILL, COLOR_WHITEHOLE_RING
+        else:
+            fill, ring = COLOR_BLACKHOLE_FILL, COLOR_BLACKHOLE_RING
+        self.pygame.draw.circle(self.screen, fill, (int(cx), int(cy)), int(r))
+        self.pygame.draw.circle(self.screen, ring, (int(cx), int(cy)), int(r), 2)
 
     def draw_menu(self, gs: GameState) -> None:
         self.screen.fill(COLOR_BG_MENU)
@@ -241,7 +247,7 @@ class Renderer:
             h1c = COLOR_HUD_P1
             h2c = COLOR_HUD_P2
         self.screen.fill(bg)
-        self.draw_blackhole()
+        self.draw_blackhole(gs.bg_mode == BG_DAY)
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:

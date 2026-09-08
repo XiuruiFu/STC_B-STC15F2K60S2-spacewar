@@ -20,7 +20,8 @@
 #define THRUST          0.05f   /* 双向推力加速度 (每 10ms tick) */
 #define ROT_SPEED       2       /* 旋转角速度 (每 tick, 单位 1/256 圈) */
 #define MAX_SPEED       2.0f    /* 速度上限 (每 tick 位移) */
-#define GRAVITY         0.0f    /* 引力场强度 (当前无引力, 保留给 E3 黑洞引力) */
+#define GRAVITY         3.0f    /* 引力/斥力常数 (每 tick 加速度) */
+#define GRAVITY_MIN_R   6       /* 距离下限截断 (r² 取下限防止发散, 实际 r<BH_R+SHIP_R 已死亡) */
 
 /* ================= 子弹 ================= */
 #define BULLET_SPEED    2.0f    /* 子弹速度 */
