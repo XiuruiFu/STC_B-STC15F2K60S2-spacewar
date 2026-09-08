@@ -43,7 +43,7 @@
 
 ## 3. Host → PC 状态帧 (可变长度, 由 BULLET_MAX 推导)
 
-帧长 `N = 16 + 6*BULLET_MAX`（`BULLET_MAX` 为每船同时在场子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。
+帧长 `N = 17 + 6*BULLET_MAX`（`BULLET_MAX` 为每船同时在场子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。
 
 | 偏移 | 字段 | 说明 |
 |------|------|------|
@@ -63,9 +63,10 @@
 | 12+6M | `p1wins` | Player1 累计胜场 |
 | 12+6M+1 | `p2wins` | Player2 累计胜场 |
 | 12+6M+2 | `flags` | 见下 |
-| 12+6M+3 | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
+| 12+6M+3 | `bgMode` | 昼夜背景：0=夜晚，1=白天 |
+| 12+6M+4 | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
 
-> 其中 `M = BULLET_MAX`。子弹区 = 偏移 `12 + 6*M - 1` 为止。
+> 其中 `M = BULLET_MAX`。
 
 子弹区布局（偏移 12 起，`2*M` 发）：
 
@@ -73,6 +74,12 @@
 - 每发子弹占 3 字节：`active`(0/1)、`x`、`y`。
 - 子弹为圆形，无朝向字段；`active=0` 时坐标字段无效。
 - 每船同时在场子弹上限为 `BULLET_MAX` 发，达到上限后再开火不产生新子弹。
+
+`bgMode` 判定（Host 侧）：
+
+- 仅在**主菜单选择"进入游戏"的瞬间**采样光敏电阻 `Rop`（`GetADC().Rop`，10bit）。
+- `Rop > LIGHT_THRESHOLD(30)` → `bgMode = 1`（白天）；否则 `bgMode = 0`（夜晚）。
+- 游戏过程中亮度变化**不影响**已确定的 `bgMode`。
 
 `flags` 位定义：
 

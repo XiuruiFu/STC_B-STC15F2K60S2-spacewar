@@ -24,13 +24,18 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define HEAD_SLV1   0x5A
 
 /* Host->PC 状态帧布局, 全部由 BULLET_MAX 推导(避免改配置时帧错位):
- * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + 校验和1 */
+ * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + 校验和1 */
 #define FRAME_BULLET_BASE  12
 #define FRAME_BULLET_BYTES (BULLET_MAX * 3)
 #define FRAME_P1WINS       (FRAME_BULLET_BASE + 2 * FRAME_BULLET_BYTES)
 #define FRAME_P2WINS       (FRAME_P1WINS + 1)
 #define FRAME_FLAGS        (FRAME_P2WINS + 1)
-#define FRAME_TX_LEN       (FRAME_FLAGS + 2)   /* +1 校验和 */
+#define FRAME_BGMODE       (FRAME_FLAGS + 1)
+#define FRAME_TX_LEN       (FRAME_BGMODE + 2)   /* +1 校验和 */
+
+/* 昼夜背景模式 */
+#define BG_NIGHT  0
+#define BG_DAY    1
 
 /* ================= 状态机 ================= */
 #define ST_MENU     0
@@ -77,6 +82,7 @@ xdata unsigned char p2_keys_prev;  /* P2 上一帧掩码(用于开火边沿) */
 xdata unsigned char p1_fire_edge;  /* P1 开火边沿标志 */
 xdata unsigned char p1wins, p2wins;
 xdata unsigned char g_flags;       /* bit0/1 爆炸特效, bit2/3 胜者 */
+xdata unsigned char g_bgMode;      /* 背景模式: BG_NIGHT/BG_DAY (开始游戏瞬间由光敏判定) */
 xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
 xdata unsigned char exit_tick;     /* EXITED 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
@@ -107,8 +113,12 @@ void menu_move(signed char dir) {
 }
 
 void menu_confirm(void) {
+    struct_ADC adc_val;
     switch (g_menuSel) {
         case 0: /* 进入游戏 -> 重置并开战 */
+            /* 开始游戏瞬间按当前亮度判定昼夜背景(游戏过程中亮度变化不影响) */
+            adc_val = GetADC();
+            g_bgMode = (adc_val.Rop > LIGHT_THRESHOLD) ? BG_DAY : BG_NIGHT;
             ship1.x = 64;  ship1.y = 128; ship1.vx = 0; ship1.vy = 0;
             ship1.ang = 0; ship1.lives = LIVES_MAX; ship1.respawn = 0; ship1.active = 1;
             ship2.x = 192; ship2.y = 128; ship2.vx = 0; ship2.vy = 0;
@@ -344,6 +354,7 @@ void send_frame(void) {
     uart1_tx[FRAME_P1WINS] = p1wins;
     uart1_tx[FRAME_P2WINS] = p2wins;
     uart1_tx[FRAME_FLAGS] = g_flags;
+    uart1_tx[FRAME_BGMODE] = g_bgMode;
     sum = 0;
     for (i = 0; i < (FRAME_TX_LEN - 1); i++) sum += uart1_tx[i];
     uart1_tx[FRAME_TX_LEN - 1] = sum;
@@ -512,6 +523,7 @@ void main(void) {
     p1_keys = 0; p2_keys = 0; p2_keys_prev = 0;
     p1_fire_edge = 0;
     g_flags = 0;
+    g_bgMode = BG_NIGHT;
     gameover_tick = 0;
     exit_tick = 0;
     rs485_timeout = 0;

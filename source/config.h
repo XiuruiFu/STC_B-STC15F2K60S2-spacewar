@@ -32,6 +32,6 @@
 #define RESPAWN_TICKS   100     /* 死亡后重生延时 (10ms ticks, 100 = 1s) */
 
 /* ================= 光敏阈值 (E2 昼夜背景) ================= */
-#define LIGHT_THRESHOLD 512     /* GL5516 光敏电阻 Rop 阈值 (10bit 中值, 待实测标定) */
+#define LIGHT_THRESHOLD 30      /* 开始游戏瞬间 Rop > 阈值 -> 白天, 否则夜晚 (实测标定) */
 
 #endif /* _CONFIG_H_ */

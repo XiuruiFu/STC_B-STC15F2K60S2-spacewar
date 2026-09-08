@@ -139,7 +139,7 @@ project/
 
 8. **显示器初始化**：`DisplayerInit()` 后须手动 `Seg7Print(10,10,...)`（全灭）+ `LedPrint(0)`（灭灯）做初始清屏。
 
-9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 16 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
+9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 17 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
 
 ---
 
@@ -198,7 +198,7 @@ project/
 - **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
 - **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
 - **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
-- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `16 + 6*BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
+- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `17 + 6*BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
 - **可调物理常量**（当前散落在 `source/main.c`，E0 将迁入 `config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE=150`（子弹寿命 ticks）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）。
 
 ---
@@ -221,9 +221,8 @@ project/
 
 ### E2 昼夜背景切换 (光敏电阻阈值判定)
 - 引入白天/夜晚两种画面背景；Host 采集光敏电阻 `Rop`（`GetADC().Rop`，GL5516，10bit，约 9ms 一次轮询，无需事件）与阈值比较，决定当前背景模式。
-- 通过状态帧新增 1 字节 `bgMode`（或复用 `flags` 未用位）下发给 PC，PC 据此渲染白天/夜晚两套配色（背景色、飞船/子弹/黑洞配色等）。
-- **光敏阈值**（及可能的滞回区间）作为可调参数放入 E0 的 config，用户在实践中动态标定。
-- 触发方式（阈值正比/反比、白天=亮=背景白 等具体映射）实施前与用户确认。
+- 通过状态帧新增 1 字节 `bgMode` 下发给 PC，PC 据此渲染白天/夜晚两套配色（背景色、飞船/子弹/黑洞配色等）。
+- **已确定行为**（实测标定）：阈值 `LIGHT_THRESHOLD = 30`；**仅在主菜单选择"进入游戏"的瞬间**采样一次 `Rop`，`Rop > 30` → 白天(`bgMode=1`)，否则夜晚(`bgMode=0`)；游戏过程中亮度变化不影响背景。
 
 ### E3 其它玩法
 - 如黑洞引力、道具/补给、连发冷却、护盾等，可后续再议。

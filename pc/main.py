@@ -22,20 +22,27 @@ from config import (
     BULLET_RADIUS,
     COLOR_BG_GAMEOVER,
     COLOR_BG_GAME,
+    COLOR_BG_GAME_DAY,
     COLOR_BG_MENU,
     COLOR_BLACKHOLE_FILL,
     COLOR_BLACKHOLE_RING,
     COLOR_BULLET_P1,
+    COLOR_BULLET_P1_DAY,
     COLOR_BULLET_P2,
+    COLOR_BULLET_P2_DAY,
     COLOR_EXPLOSION_INNER,
     COLOR_EXPLOSION_OUTER,
     COLOR_HUD_P1,
+    COLOR_HUD_P1_DAY,
     COLOR_HUD_P2,
+    COLOR_HUD_P2_DAY,
     COLOR_MENU_SELECTED,
     COLOR_MENU_UNSELECTED,
     COLOR_MENU_WINS,
     COLOR_P1_SHIP,
+    COLOR_P1_SHIP_DAY,
     COLOR_P2_SHIP,
+    COLOR_P2_SHIP_DAY,
     COLOR_TITLE,
     EXPLOSION_INNER_RATIO,
     EXPLOSION_RADIUS,
@@ -52,14 +59,19 @@ HEAD_PC1 = 0x55
 SER_READ_SIZE = 512
 BULLETS_PER_PLAYER = BULLET_MAX  # 与 Host BULLET_MAX 一致
 
-# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+校验和1
+# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+bgMode1+校验和1
 FRAME_P1WINS = 12 + 2 * BULLETS_PER_PLAYER * 3
-FRAME_LEN = FRAME_P1WINS + 4
+FRAME_FLAGS = FRAME_P1WINS + 2
+FRAME_BGMODE = FRAME_FLAGS + 1
+FRAME_LEN = FRAME_BGMODE + 2
 
 ST_MENU = 0
 ST_PLAYING = 1
 ST_GAMEOVER = 2
 ST_EXITED = 3
+
+BG_NIGHT = 0
+BG_DAY = 1
 
 FLAG_P1_DEAD = 0x01
 FLAG_P2_DEAD = 0x02
@@ -97,6 +109,7 @@ class GameState:
         self.p1_wins = 0
         self.p2_wins = 0
         self.flags = 0
+        self.bg_mode = BG_NIGHT
         self.frame_ok = False
 
     def parse(self, buf: bytes) -> bool:
@@ -124,7 +137,8 @@ class GameState:
             n += 3
         self.p1_wins = buf[FRAME_P1WINS]
         self.p2_wins = buf[FRAME_P1WINS + 1]
-        self.flags = buf[FRAME_P1WINS + 2]
+        self.flags = buf[FRAME_FLAGS]
+        self.bg_mode = buf[FRAME_BGMODE]
         self.p1.dead = bool(self.flags & FLAG_P1_DEAD)
         self.p2.dead = bool(self.flags & FLAG_P2_DEAD)
         self.frame_ok = True
@@ -210,23 +224,39 @@ class Renderer:
         self.screen.blit(wins, (self.width // 2 - wins.get_width() // 2, 380))
 
     def draw_game(self, gs: GameState) -> None:
-        self.screen.fill(COLOR_BG_GAME)
+        if gs.bg_mode == BG_DAY:
+            bg = COLOR_BG_GAME_DAY
+            p1c = COLOR_P1_SHIP_DAY
+            p2c = COLOR_P2_SHIP_DAY
+            b1c = COLOR_BULLET_P1_DAY
+            b2c = COLOR_BULLET_P2_DAY
+            h1c = COLOR_HUD_P1_DAY
+            h2c = COLOR_HUD_P2_DAY
+        else:
+            bg = COLOR_BG_GAME
+            p1c = COLOR_P1_SHIP
+            p2c = COLOR_P2_SHIP
+            b1c = COLOR_BULLET_P1
+            b2c = COLOR_BULLET_P2
+            h1c = COLOR_HUD_P1
+            h2c = COLOR_HUD_P2
+        self.screen.fill(bg)
         self.draw_blackhole()
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:
-            self.draw_ship(gs.p1, COLOR_P1_SHIP)
+            self.draw_ship(gs.p1, p1c)
         if gs.p2.dead:
             self.draw_explosion(gs.p2.x, gs.p2.y)
         else:
-            self.draw_ship(gs.p2, COLOR_P2_SHIP)
+            self.draw_ship(gs.p2, p2c)
         for b in gs.bullets[:BULLETS_PER_PLAYER]:
-            self.draw_bullet(b, COLOR_BULLET_P1)
+            self.draw_bullet(b, b1c)
         for b in gs.bullets[BULLETS_PER_PLAYER:]:
-            self.draw_bullet(b, COLOR_BULLET_P2)
+            self.draw_bullet(b, b2c)
         # HUD
-        hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, COLOR_HUD_P1)
-        hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, COLOR_HUD_P2)
+        hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, h1c)
+        hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, h2c)
         self.screen.blit(hud1, (10, 10))
         self.screen.blit(hud2, (self.width - hud2.get_width() - 10, 10))
 
