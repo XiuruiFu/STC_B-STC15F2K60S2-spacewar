@@ -3,6 +3,7 @@
 #include "displayer.H"
 #include "key.H"
 #include "adc.H"
+#include "beep.H"
 #include "uart2.H"
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
@@ -37,7 +38,10 @@ void cb_key(void) {
     else if (k == enumKeyRelease) keys &= ~K_BACK;
 
     k = GetKeyAct(enumKey2);
-    if (k == enumKeyPress) fire_edge = 1;
+    if (k == enumKeyPress) {
+        fire_edge = 1;
+        SetBeep(900, 4);   /* 开火按键反馈 */
+    }
 }
 
 void cb_nav(void) {
@@ -98,6 +102,7 @@ void main(void) {
     DisplayerInit();
     KeyInit();
     AdcInit(ADCexpEXT);
+    BeepInit();
     Uart2Init(38400, Uart2Usedfor485);
 
     keys = 0; keys_prev = 0; fire_edge = 0;
