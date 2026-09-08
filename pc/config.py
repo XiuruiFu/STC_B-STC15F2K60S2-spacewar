@@ -12,7 +12,7 @@ WINDOW_HEIGHT = 800
 FIELD = 256  # 与 Host 逻辑场 0~255 对应，PC 按屏幕比例缩放
 
 # ================= 子弹 =================
-BULLET_MAX = 5  # 每船同时在场子弹上限 (与 Host config.h BULLET_MAX 保持一致)
+BULLET_MAX = 4  # 每船同时在场子弹上限 (与 Host config.h BULLET_MAX 保持一致)
 
 # ================= 渲染几何 (逻辑单位, 实际像素 = 值 * scale) =================
 SHIP_SIZE = 10.0
