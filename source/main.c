@@ -135,9 +135,17 @@ void menu_confirm(void) {
 }
 
 /* ================= 重生 ================= */
+float dist2_wrap(float x1, float y1, float x2, float y2);  /* 前置声明(定义在后) */
+
 void respawn_ship(Ship *s) {
-    s->x = (float)(rnd() & 0xFF);
-    s->y = (float)(rnd() & 0xFF);
+    unsigned char tries;
+    /* 随机位置，但须避开黑洞吞噬半径(黑洞半径+飞船半径)，否则一重生即被吞噬 */
+    for (tries = 0; tries < 16; tries++) {
+        s->x = (float)(rnd() & 0xFF);
+        s->y = (float)(rnd() & 0xFF);
+        if (dist2_wrap(s->x, s->y, (float)BH_X, (float)BH_Y) >= (float)(BH_R + SHIP_R) * (BH_R + SHIP_R))
+            break;
+    }
     s->vx = 0.0f; s->vy = 0.0f;
     s->ang = (unsigned char)(rnd() & 0xFF);
     s->respawn = 0;
