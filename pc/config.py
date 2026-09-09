@@ -40,6 +40,12 @@ BOSS_ROT_SPEED = 50.0        # BOSS 图片旋转速度 (度/秒, 纯视觉)
 BOSS_IMAGE = "boss.jpg"      # BOSS 贴图 (pc/assets/ 下)
 BOSS_BULLET_RADIUS = 3.0     # BOSS 子弹绘制半径 (逻辑单位)
 
+# ================= 温度护盾 (温度传感器技能) =================
+SHIELD_R = 15.0              # 护盾半径 (逻辑单位, 与 Host SHIELD_R 一致)
+SHIELD_HALF_ANGLE = 37.5    # 护盾半张角 (度, 正前 ±37.5° = 75° 扇形)
+COLOR_SHIELD_P1 = (0, 200, 255)   # P1 护盾弧线颜色 (青色)
+COLOR_SHIELD_P2 = (255, 120, 0)   # P2 护盾弧线颜色 (橙色)
+
 # ================= 颜色主题 (RGB) =================
 COLOR_BG_MENU = (10, 10, 30)
 COLOR_BG_GAME = (0, 0, 0)
