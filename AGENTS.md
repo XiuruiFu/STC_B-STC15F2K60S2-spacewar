@@ -200,8 +200,8 @@ project/
 - **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
 - **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
 - **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
-- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，BOSS_BULLET_MAX 为 BOSS 子弹上限；Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
-- **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）、`GRAVITY`/`GRAVITY_MIN_R`（引力系统）、`BOSS_HP=15`/`BOSS_BULLET_*`（合作战 BOSS）。
+- **协议帧**：Slave→Host 5 字节（含护盾标志）；Host→PC 可变长度 `20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，BOSS_BULLET_MAX 为 BOSS 子弹上限；Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
+- **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）、`GRAVITY`/`GRAVITY_MIN_R`（引力系统）、`BOSS_HP=15`/`BOSS_BULLET_*`（合作战 BOSS）、`SHIELD_R=15`/`SHIELD_TEMP=300`（温度护盾，张角 75°）。
 - **昼夜背景**（E2 已实现）：状态帧含 `bgMode` 字节（0=夜晚、1=白天）；`bgMode` 在"开始游戏"瞬间由 `GetADC().Rop > LIGHT_THRESHOLD` 判定，游戏过程中锁定不变。
 - **合作打 BOSS**（7.4 已实现）：`easterEgg=1` 时进入纯合作 PvE，中央 BOSS（固定、无引力、圆碰撞 `BH_R`、周期旋转散射）取代黑洞；双方合力击毁 BOSS（`bossHp` 归零）共同胜利，双方都出局则失败；友伤关闭，不写 NVM 胜场。
 - **从机背景音乐 + 音效分工**：从机（Slave）仅播放**循环背景音乐**（`music.h` 硬编码乐谱，`cb_led` 里 `GetPlayerMode()==enumModeStop` 时 `SetPlayerMode(enumModePlay)` 自动重播）；所有按键/游戏音效（开火、菜单确认、死亡、胜负等）统一由**主机（Host）`SetBeep`** 发声（蜂鸣器单音轨，故从机不再 `SetBeep` 以免与 BGM 抢音轨）。
@@ -280,6 +280,19 @@ project/
   - 缺图兜底：回退绘制实心圆；不得崩溃。
 - **PC 呈现**：纯白背景（延续彩蛋主题）；顶部中央新增 **BOSS 血条**（剩余 HP/20）；双方生命 HUD 保留；BOSS 死亡 → 中央爆炸 + `BOSS DEFEATED!` 结算画面。
 - **协议扩展**：状态帧需新增传输 **BOSS 血量** 与 **BOSS 子弹**（复用现在的子弹区机制，`FRAME_TX_LEN` 由宏推导，禁止写死偏移）。具体字节布局实现前一并写入 `docs/protocol.md`。
+
+### 7.5 温度传感器技能 —— 船头护盾 (Temperature Shield)
+
+> 已与用户对齐，实现时严格遵守。
+
+- **触发**：温度传感器 `Rt`（10K/3950 NTC），`calc_temp()` 查表+线性插值换算 0.1°C（移植 hw8）。**温度 > 30.0°C**（`SHIELD_TEMP=300`）时护盾激活，**常驻无冷却**；手放上约 15s 稳定到 ~33°C，手拿开后温度回落自动关闭（慢热响应天然防抖）。
+- **双方都有**：Host 读本板 `Rt`（P1）；Slave 读本板 `Rt` 本地判定后经 RS485 上行 1 字节护盾标志（帧 4→5 字节）。
+- **护盾几何**：船头前方**填充 75° 扇形**（正前 ±37.5°），半径 `SHIELD_R=15`，随船头朝向旋转；PC 渲染为弧线（P1 青色、P2 橙色）。
+- **碰撞规则**：敌方子弹进入「距船 < SHIELD_R 且 与船头夹角 < 半张角(37.5°)」即被挡消失、飞船不死（点积判定，8051 免三角函数，`SHIELD_COS2`=cos²(半张角)）。
+  - PvP：P1 盾挡 P2 弹、P2 盾挡 P1 弹；合作战：双方盾挡 BOSS 弹。
+  - 不挡黑洞、不挡己方子弹、不挡飞船/实体撞击；船死后护盾失效。
+- **协议**：Host→PC 状态帧新增 1 字节 `shield`（bit0=P1、bit1=P2），位于 `easterEgg` 与 `bossHp` 之间 → `FRAME_TX_LEN = 20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`；PC 解析后按飞船朝向绘制护盾弧线。
+- **换算表**：`inc/temp.h`（Host 与 Slave 共用，Slave 端复制一份）。
 
 ## 8. 人机协同 Git 工作流规范 (Human-AI Git Workflow)
 

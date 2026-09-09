@@ -18,14 +18,15 @@
 
 ---
 
-## 2. Slave → Host 按键帧 (4 字节固定)
+## 2. Slave → Host 按键帧 (5 字节固定)
 
 | 偏移 | 字段 | 值 |
 |------|------|-----|
 | 0 | 帧头 0 | `0xA5` |
 | 1 | 帧头 1 | `0x5A` |
 | 2 | 按键掩码 `keys` | 见下 |
-| 3 | 校验和 | `(0xA5 + 0x5A + keys) & 0xFF` |
+| 3 | 护盾标志 `shield` | 0/1（从机按温度 > 30°C 判定） |
+| 4 | 校验和 | `(0xA5 + 0x5A + keys + shield) & 0xFF` |
 
 `keys` 位定义（1 = 按下，0 = 松开）：
 
@@ -39,11 +40,13 @@
 | 5 | 菜单上移 | NavLeft |
 | 6 | 菜单下移 | NavRight |
 
+`shield`：从机读本板温度（NTC `Rt` → `calc_temp`），`> 30.0°C` 时为 1（护盾激活）。
+
 ---
 
 ## 3. Host → PC 状态帧 (可变长度, 由 BULLET_MAX / BOSS_BULLET_MAX 推导)
 
-帧长 `N = 19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`（`BULLET_MAX` 为每船玩家子弹上限，`BOSS_BULLET_MAX` 为 BOSS 子弹同屏上限；Host `config.h` 与 PC `config.py` 必须一致）。记 `M = BULLET_MAX`、`K = BOSS_BULLET_MAX`。
+帧长 `N = 20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`（`BULLET_MAX` 为每船玩家子弹上限，`BOSS_BULLET_MAX` 为 BOSS 子弹同屏上限；Host `config.h` 与 PC `config.py` 必须一致）。记 `M = BULLET_MAX`、`K = BOSS_BULLET_MAX`。
 
 | 偏移 | 字段 | 说明 |
 |------|------|------|
@@ -65,9 +68,10 @@
 | 12+6M+2 | `flags` | 见下 |
 | 12+6M+3 | `bgMode` | 昼夜背景：0=夜晚，1=白天 |
 | 12+6M+4 | `easterEgg` | 彩蛋地图：0=否，1=是（本局） |
-| 12+6M+5 | `bossHp` | BOSS 剩余血量（仅彩蛋地图有效） |
-| 12+6M+6 ~ +5+3K | BOSS 子弹区 | 共 `K` 发，每发 3 字节 `(active, x, y)` |
-| 12+6M+6+3K | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
+| 12+6M+5 | `shield` | 护盾状态：bit0=P1，bit1=P2 |
+| 12+6M+6 | `bossHp` | BOSS 剩余血量（仅彩蛋地图有效） |
+| 12+6M+7 ~ +6+3K | BOSS 子弹区 | 共 `K` 发，每发 3 字节 `(active, x, y)` |
+| 12+6M+7+3K | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
 
 玩家子弹区布局（偏移 12 起，`2*M` 发）：
 
@@ -76,7 +80,13 @@
 - 子弹为圆形，无朝向字段；`active=0` 时坐标字段无效。
 - 每船同时在场子弹上限为 `BULLET_MAX` 发，达到上限后再开火不产生新子弹。
 
-BOSS 子弹区（偏移 `12+6M+6` 起，`K` 发）：每发 3 字节 `(active, x, y)`，规则同玩家子弹。
+BOSS 子弹区（偏移 `12+6M+7` 起，`K` 发）：每发 3 字节 `(active, x, y)`，规则同玩家子弹。
+
+`shield`（温度护盾）：
+
+- bit0（`0x01`）P1 护盾、bit1（`0x02`）P2 护盾。
+- Host 读本板 `Rt`（P1），Slave 读本板 `Rt` 经 RS485 上行（P2）；温度 `> 30.0°C` 时护盾激活（常驻、无冷却）。
+- 护盾为船头前方 90° 扇形（半径 `SHIELD_R=30`），敌方子弹进入即被挡消失、飞船不死。
 
 `bgMode` 判定（Host 侧）：
 

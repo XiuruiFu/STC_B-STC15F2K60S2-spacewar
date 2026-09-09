@@ -5,6 +5,7 @@
 #include "adc.H"
 #include "beep.H"
 #include "music.h"
+#include "temp.h"
 #include "uart2.H"
 #include "hall.H"
 #include "IR.h"
@@ -49,11 +50,15 @@ code unsigned char bgm_score[] = {
 
 #define EASTER_MAGIC 0xE1  /* 彩蛋魔数(红外发送给主机) */
 
+/* 护盾激活温度阈值 (0.1°C, 与 Host config.h SHIELD_TEMP 保持一致) */
+#define SHIELD_TEMP 300
+
 xdata unsigned char keys;        /* 当前按住状态掩码 */
 xdata unsigned char keys_prev;   /* 上一帧掩码 */
 xdata unsigned char fire_edge;   /* 开火边沿 */
+xdata unsigned char shield;      /* 护盾激活标志(温度>阈值=1) */
 xdata unsigned int  send_tick;   /* 发送节拍 */
-xdata unsigned char uart2_tx[4]; /* 发送缓冲(须全局, 异步发送期间不覆盖) */
+xdata unsigned char uart2_tx[5]; /* 发送缓冲(须全局, 异步发送期间不覆盖) */
 code  unsigned char ir_tx[1] = {EASTER_MAGIC}; /* 彩蛋红外数据(不防抖, 霍尔触发即发) */
 
 void cb_key(void) {
@@ -108,13 +113,16 @@ void send_keys(void) {
     uart2_tx[0] = HEAD_SLV0;
     uart2_tx[1] = HEAD_SLV1;
     uart2_tx[2] = mask;
-    uart2_tx[3] = (unsigned char)(HEAD_SLV0 + HEAD_SLV1 + mask);
-    Uart2Print(uart2_tx, 4);
+    uart2_tx[3] = shield;
+    uart2_tx[4] = (unsigned char)(HEAD_SLV0 + HEAD_SLV1 + mask + shield);
+    Uart2Print(uart2_tx, 5);
     if (!changed) send_tick = 10;   /* 无变化时每 100ms 保底发送一次(维持在线指示) */
 }
 
 void cb_10ms(void) {
     if (send_tick > 0) send_tick--;
+    /* 读本板温度, 高于阈值则护盾激活 */
+    shield = (calc_temp(GetADC().Rt) > SHIELD_TEMP) ? 1 : 0;
     send_keys();
 }
 
@@ -145,6 +153,7 @@ void main(void) {
     IrInit(NEC_R05d);
 
     keys = 0; keys_prev = 0; fire_edge = 0;
+    shield = 0;
     send_tick = 0;
     SetDisplayerArea(0, 7);
     Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);

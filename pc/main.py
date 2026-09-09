@@ -57,6 +57,8 @@ from config import (
     COLOR_P1_SHIP_DAY,
     COLOR_P2_SHIP,
     COLOR_P2_SHIP_DAY,
+    COLOR_SHIELD_P1,
+    COLOR_SHIELD_P2,
     COLOR_TITLE,
     COLOR_WHITEHOLE_FILL,
     COLOR_WHITEHOLE_RING,
@@ -64,6 +66,8 @@ from config import (
     EXPLOSION_RADIUS,
     FIELD,
     MENU_ITEMS,
+    SHIELD_HALF_ANGLE,
+    SHIELD_R,
     SHIP_SIZE,
     WINDOW_HEIGHT,
     WINDOW_WIDTH,
@@ -80,9 +84,13 @@ FRAME_P1WINS = 12 + 2 * BULLETS_PER_PLAYER * 3
 FRAME_FLAGS = FRAME_P1WINS + 2
 FRAME_BGMODE = FRAME_FLAGS + 1
 FRAME_EASTER = FRAME_BGMODE + 1
-FRAME_BOSS_HP = FRAME_EASTER + 1
+FRAME_SHIELD = FRAME_EASTER + 1
+FRAME_BOSS_HP = FRAME_SHIELD + 1
 FRAME_BOSS_BSTART = FRAME_BOSS_HP + 1
 FRAME_LEN = FRAME_BOSS_BSTART + BOSS_BULLET_MAX * 3 + 1
+
+SH_P1 = 0x01
+SH_P2 = 0x02
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -134,6 +142,8 @@ class GameState:
         self.bg_mode = BG_NIGHT
         self.easter_egg = False
         self.boss_hp = 0
+        self.shield1 = False
+        self.shield2 = False
         self.frame_ok = False
 
     def parse(self, buf: bytes) -> bool:
@@ -164,6 +174,9 @@ class GameState:
         self.flags = buf[FRAME_FLAGS]
         self.bg_mode = buf[FRAME_BGMODE]
         self.easter_egg = buf[FRAME_EASTER] != 0
+        sh = buf[FRAME_SHIELD]
+        self.shield1 = bool(sh & SH_P1)
+        self.shield2 = bool(sh & SH_P2)
         self.boss_hp = buf[FRAME_BOSS_HP]
         n = FRAME_BOSS_BSTART
         for i in range(BOSS_BULLET_MAX):
@@ -247,6 +260,22 @@ class Renderer:
         left = (cx + size * 0.6 * math.cos(left_ang), cy - size * 0.6 * math.sin(left_ang))
         right = (cx + size * 0.6 * math.cos(right_ang), cy - size * 0.6 * math.sin(right_ang))
         self.pygame.draw.polygon(self.screen, color, [nose, left, right])
+
+    def draw_shield(self, ship: Ship, color) -> None:
+        """船头前方 90° 弧线护盾 (半透明扇形边). 仅在护盾激活时调用."""
+        cx, cy = self.to_screen(ship.x, ship.y)
+        r = SHIELD_R * self.scale
+        base = angle_to_rad(ship.ang)
+        half = math.radians(SHIELD_HALF_ANGLE)
+        # 屏幕 Y 向下, 与船头方向(dirx=cos, diry=-sin)对齐: 偏移角度取 -ang
+        a0 = -base - half
+        a1 = -base + half
+        n = 24
+        pts = []
+        for i in range(n + 1):
+            a = a0 + (a1 - a0) * i / n
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+        self.pygame.draw.lines(self.screen, color, False, [(int(x), int(y)) for x, y in pts], 3)
 
     def draw_explosion(self, x: int, y: int) -> None:
         cx, cy = self.to_screen(x, y)
@@ -357,10 +386,14 @@ class Renderer:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:
             self.draw_ship(gs.p1, p1c)
+            if gs.shield1:
+                self.draw_shield(gs.p1, COLOR_SHIELD_P1)
         if gs.p2.dead:
             self.draw_explosion(gs.p2.x, gs.p2.y)
         else:
             self.draw_ship(gs.p2, p2c)
+            if gs.shield2:
+                self.draw_shield(gs.p2, COLOR_SHIELD_P2)
         for b in gs.bullets[:BULLETS_PER_PLAYER]:
             self.draw_bullet(b, b1c)
         for b in gs.bullets[BULLETS_PER_PLAYER:]:

@@ -9,6 +9,7 @@
 #include "DS1302.H"
 #include "sin_table.h"
 #include "config.h"
+#include "temp.h"
 #include <math.h>   /* sqrt(引力方向归一化用) */
 #include "IR.h"     /* 彩蛋红外接收 */
 
@@ -30,7 +31,7 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 
 /* Host->PC 状态帧布局, 全部由 BULLET_MAX / BOSS_BULLET_MAX 推导(避免改配置时帧错位):
  * 帧头2 + state/menuSel2 + 双方飞船8 + 玩家子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + easterEgg1
- * + BOSS血量1 + BOSS子弹(BOSS_BULLET_MAX*3) + 校验和1 */
+ * + shield1 + BOSS血量1 + BOSS子弹(BOSS_BULLET_MAX*3) + 校验和1 */
 #define FRAME_BULLET_BASE  12
 #define FRAME_BULLET_BYTES (BULLET_MAX * 3)
 #define FRAME_P1WINS       (FRAME_BULLET_BASE + 2 * FRAME_BULLET_BYTES)
@@ -38,7 +39,8 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define FRAME_FLAGS        (FRAME_P2WINS + 1)
 #define FRAME_BGMODE       (FRAME_FLAGS + 1)
 #define FRAME_EASTER       (FRAME_BGMODE + 1)
-#define FRAME_BOSS_HP      (FRAME_EASTER + 1)
+#define FRAME_SHIELD       (FRAME_EASTER + 1)
+#define FRAME_BOSS_HP      (FRAME_SHIELD + 1)
 #define FRAME_BOSS_BSTART  (FRAME_BOSS_HP + 1)
 #define FRAME_BOSS_BYTES   (BOSS_BULLET_MAX * 3)
 #define FRAME_TX_LEN       (FRAME_BOSS_BSTART + FRAME_BOSS_BYTES + 1)   /* +1 校验和 */
@@ -46,6 +48,10 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 /* 昼夜背景模式 */
 #define BG_NIGHT  0
 #define BG_DAY    1
+
+/* 护盾标志位 (Host->PC 状态帧 shield 字节) */
+#define SH_P1   0x01
+#define SH_P2   0x02
 
 /* 胜者 flags 位(扩展, 原 0x01/0x02=死亡特效, 0x04/0x08=P1/P2胜) */
 #define FLAG_BOSS_WIN   0x10   /* 合作战 BOSS 被击毁, 双方胜 */
@@ -104,12 +110,14 @@ xdata unsigned char g_bossHp;      /* BOSS 剩余血量 */
 xdata unsigned char g_bossAlive;   /* BOSS 是否在场 (1=在场) */
 xdata unsigned int  g_bossFireTick;/* BOSS 射击倒计时 */
 xdata unsigned char g_bossFireAng; /* BOSS 散射基准角(256制) */
+xdata unsigned char g_shield1;     /* P1 护盾激活 (0/1) */
+xdata unsigned char g_shield2;     /* P2 护盾激活 (0/1) */
 xdata unsigned char g_led_run;     /* 彩蛋武装流水灯位(菜单态) */
 xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
 xdata unsigned char exit_tick;     /* EXITED 停留计时 */
 xdata unsigned int  rs485_timeout; /* RS485 接收超时计数 */
 
-xdata unsigned char uart2_rx[4];   /* Slave 按键帧接收缓冲 */
+xdata unsigned char uart2_rx[5];   /* Slave 按键帧接收缓冲(5字节: 头2+键1+护盾1+校验1) */
 xdata unsigned char uart1_tx[FRAME_TX_LEN];  /* Host->PC 发送缓冲(须全局, 异步发送期间不覆盖) */
 xdata unsigned char ir_rx[1];      /* 彩蛋红外接收缓冲 */
 code  unsigned char slv_head[2] = {HEAD_SLV0, HEAD_SLV1};
@@ -385,6 +393,23 @@ void boss_damage(unsigned char player) {
 }
 
 /* ================= 碰撞检测 ================= */
+/* 子弹是否被飞船护盾挡住: 距船 < SHIELD_R 且 与船头朝向夹角 < 半张角 (正前 75° 扇形) */
+unsigned char shield_blocked(Ship *s, float bx, float by) {
+    float dx, dy, dist2, fx, fy, dot;
+    unsigned char idx;
+    dx = bx - s->x;
+    dy = by - s->y;
+    dist2 = dx * dx + dy * dy;
+    if (dist2 >= (float)(SHIELD_R * SHIELD_R)) return 0;
+    idx = (unsigned char)(s->ang + 64);
+    fx = sin_table[idx];
+    fy = -sin_table[s->ang];
+    dot = fx * dx + fy * dy;
+    if (dot <= 0.0f) return 0;              /* 后方 */
+    if (dot * dot <= SHIELD_COS2 * dist2) return 0; /* 夹角 >= 半张角 */
+    return 1;
+}
+
 void check_collisions_boss(void) {
     float ship_r2, bullet_r2;
     unsigned char i;
@@ -410,10 +435,18 @@ void check_collisions_boss(void) {
             }
         }
     }
-    /* BOSS 子弹命中飞船 */
+    /* BOSS 子弹命中飞船 (先经护盾判定: 挡掉则消失, 不伤飞船) */
     bullet_r2 = (float)(BOSS_BULLET_R + SHIP_R) * (BOSS_BULLET_R + SHIP_R);
     for (i = 0; i < BOSS_BULLET_MAX; i++) {
         if (!boss_bullets[i].active) continue;
+        if (ship1.active && g_shield1 && shield_blocked(&ship1, boss_bullets[i].x, boss_bullets[i].y)) {
+            boss_bullets[i].active = 0;
+            continue;
+        }
+        if (ship2.active && g_shield2 && shield_blocked(&ship2, boss_bullets[i].x, boss_bullets[i].y)) {
+            boss_bullets[i].active = 0;
+            continue;
+        }
         if (ship1.active && dist2_wrap(boss_bullets[i].x, boss_bullets[i].y, ship1.x, ship1.y) < bullet_r2) {
             boss_bullets[i].active = 0;
             kill_ship(0);
@@ -444,16 +477,24 @@ void check_collisions(void) {
         if (bullet2[i].active && dist2_wrap(bullet2[i].x, bullet2[i].y, (float)BH_X, (float)BH_Y) < bhr_b)
             bullet2[i].active = 0;
     }
-    /* 子弹命中飞船 */
+    /* 子弹命中飞船 (先经护盾判定: 挡掉则消失, 不伤飞船) */
     r2 = (float)(SHIP_R+BULLET_R)*(SHIP_R+BULLET_R);
     for (i = 0; i < BULLET_MAX; i++) {
-        if (bullet1[i].active && ship2.active && dist2_wrap(bullet1[i].x, bullet1[i].y, ship2.x, ship2.y) < r2) {
-            bullet1[i].active = 0;
-            kill_ship(1);
+        if (bullet1[i].active) {
+            if (ship2.active && g_shield2 && shield_blocked(&ship2, bullet1[i].x, bullet1[i].y)) {
+                bullet1[i].active = 0;
+            } else if (bullet1[i].active && ship2.active && dist2_wrap(bullet1[i].x, bullet1[i].y, ship2.x, ship2.y) < r2) {
+                bullet1[i].active = 0;
+                kill_ship(1);
+            }
         }
-        if (bullet2[i].active && ship1.active && dist2_wrap(bullet2[i].x, bullet2[i].y, ship1.x, ship1.y) < r2) {
-            bullet2[i].active = 0;
-            kill_ship(0);
+        if (bullet2[i].active) {
+            if (ship1.active && g_shield1 && shield_blocked(&ship1, bullet2[i].x, bullet2[i].y)) {
+                bullet2[i].active = 0;
+            } else if (bullet2[i].active && ship1.active && dist2_wrap(bullet2[i].x, bullet2[i].y, ship1.x, ship1.y) < r2) {
+                bullet2[i].active = 0;
+                kill_ship(0);
+            }
         }
     }
 }
@@ -523,6 +564,7 @@ void send_frame(void) {
     uart1_tx[FRAME_FLAGS] = g_flags;
     uart1_tx[FRAME_BGMODE] = g_bgMode;
     uart1_tx[FRAME_EASTER] = g_easterEgg;
+    uart1_tx[FRAME_SHIELD] = (g_shield1 ? SH_P1 : 0) | (g_shield2 ? SH_P2 : 0);
     uart1_tx[FRAME_BOSS_HP] = g_bossHp;
     n = FRAME_BOSS_BSTART;
     for (i = 0; i < BOSS_BULLET_MAX; i++) {
@@ -559,6 +601,9 @@ void display_wins(void) {
 void cb_10ms(void) {
     /* RS485 超时检测 */
     if (rs485_timeout > 0) rs485_timeout--;
+
+    /* P1 护盾: 温度 > 阈值时激活 (读本板 Rt) */
+    g_shield1 = (calc_temp(GetADC().Rt) > SHIELD_TEMP) ? 1 : 0;
 
     /* 菜单态: P2 菜单导航 + 确认 (边沿触发) */
     if (g_state == ST_MENU) {
@@ -661,9 +706,10 @@ void cb_nav(void) {
 
 void cb_uart2(void) {
     unsigned char sum;
-    sum = uart2_rx[0] + uart2_rx[1] + uart2_rx[2];
-    if (uart2_rx[3] == sum) {
+    sum = uart2_rx[0] + uart2_rx[1] + uart2_rx[2] + uart2_rx[3];
+    if (uart2_rx[4] == sum) {
         p2_keys = uart2_rx[2];
+        g_shield2 = (uart2_rx[3] != 0);   /* P2 护盾激活标志(由从机按温度判定) */
         rs485_timeout = 50;  /* 500ms 内视为在线 */
     }
 }
@@ -718,7 +764,7 @@ void main(void) {
     BeepInit();
     Uart1Init(115200);
     Uart2Init(38400, Uart2Usedfor485);
-    SetUart2Rxd(uart2_rx, 4, slv_head, 2);
+    SetUart2Rxd(uart2_rx, 5, slv_head, 2);
     IrInit(NEC_R05d);
     SetIrRxd(ir_rx, 1);
 
@@ -736,6 +782,8 @@ void main(void) {
     g_bossAlive = 0;
     g_bossFireTick = 0;
     g_bossFireAng = 0;
+    g_shield1 = 0;
+    g_shield2 = 0;
     g_led_run = 0;
     gameover_tick = 0;
     exit_tick = 0;
