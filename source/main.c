@@ -575,6 +575,7 @@ void cb_10ms(void) {
         }
         /* P2 开火边沿 */
         if ((p2_keys & K_FIRE) && !(p2_keys_prev & K_FIRE)) {
+            SetBeep(900, 4);   /* P2 开火音效(由主机统一发声) */
             try_fire(&ship2, bullet2);
         }
 

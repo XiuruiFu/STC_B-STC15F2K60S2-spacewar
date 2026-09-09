@@ -204,6 +204,7 @@ project/
 - **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）、`GRAVITY`/`GRAVITY_MIN_R`（引力系统）、`BOSS_HP=15`/`BOSS_BULLET_*`（合作战 BOSS）。
 - **昼夜背景**（E2 已实现）：状态帧含 `bgMode` 字节（0=夜晚、1=白天）；`bgMode` 在"开始游戏"瞬间由 `GetADC().Rop > LIGHT_THRESHOLD` 判定，游戏过程中锁定不变。
 - **合作打 BOSS**（7.4 已实现）：`easterEgg=1` 时进入纯合作 PvE，中央 BOSS（固定、无引力、圆碰撞 `BH_R`、周期旋转散射）取代黑洞；双方合力击毁 BOSS（`bossHp` 归零）共同胜利，双方都出局则失败；友伤关闭，不写 NVM 胜场。
+- **从机背景音乐 + 音效分工**：从机（Slave）仅播放**循环背景音乐**（`music.h` 硬编码乐谱，`cb_led` 里 `GetPlayerMode()==enumModeStop` 时 `SetPlayerMode(enumModePlay)` 自动重播）；所有按键/游戏音效（开火、菜单确认、死亡、胜负等）统一由**主机（Host）`SetBeep`** 发声（蜂鸣器单音轨，故从机不再 `SetBeep` 以免与 BGM 抢音轨）。
 
 ---
 

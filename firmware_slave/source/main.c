@@ -4,6 +4,7 @@
 #include "key.H"
 #include "adc.H"
 #include "beep.H"
+#include "music.h"
 #include "uart2.H"
 #include "hall.H"
 #include "IR.h"
@@ -14,6 +15,25 @@ code unsigned long SysClock = 11059200;   // 11.0592MHz
 code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x00,0x08,0x40,0x01, 0x41, 0x48,
                             0x3f|0x80,0x06|0x80,0x5b|0x80,0x4f|0x80,0x66|0x80,0x6d|0x80,0x7d|0x80,0x07|0x80,0x7f|0x80,0x6f|0x80};
 #endif
+
+/* ================= 循环背景音乐 (硬编码于从机) =================
+ * 乐谱格式: 每两个字节一组 (音高, 时值)。音高 scale: 高4位音区(2=中央8度)、
+ * 低3位唱名(1~7=do~si); 时值单位 1/16 拍。曲目: 小星星 (C大调, 24 小节)。
+ */
+code unsigned char bgm_score[] = {
+    0x21,0x10, 0x21,0x10, 0x25,0x10, 0x25,0x10,  /* do do so so */
+    0x26,0x10, 0x26,0x10, 0x25,0x20,             /* la la so-- */
+    0x24,0x10, 0x24,0x10, 0x23,0x10, 0x23,0x10,  /* fa fa mi mi */
+    0x22,0x10, 0x22,0x10, 0x21,0x20,             /* re re do-- */
+    0x25,0x10, 0x25,0x10, 0x24,0x10, 0x24,0x10,  /* so so fa fa */
+    0x23,0x10, 0x23,0x10, 0x22,0x20,             /* mi mi re-- */
+    0x25,0x10, 0x25,0x10, 0x24,0x10, 0x24,0x10,  /* so so fa fa */
+    0x23,0x10, 0x23,0x10, 0x22,0x20,             /* mi mi re-- */
+    0x21,0x10, 0x21,0x10, 0x25,0x10, 0x25,0x10,  /* do do so so */
+    0x26,0x10, 0x26,0x10, 0x25,0x20,             /* la la so-- */
+    0x24,0x10, 0x24,0x10, 0x23,0x10, 0x23,0x10,  /* fa fa mi mi */
+    0x22,0x10, 0x22,0x10, 0x21,0x20              /* re re do-- */
+};
 
 /* 按键掩码位 (与 Host 协议一致) */
 #define K_FWD   0x01
@@ -45,7 +65,7 @@ void cb_key(void) {
     k = GetKeyAct(enumKey2);
     if (k == enumKeyPress) {
         fire_edge = 1;
-        SetBeep(900, 4);   /* 开火按键反馈 */
+        /* 音效由主机统一发声, 从机不 Beep(避免与背景乐抢单音轨) */
     }
 }
 
@@ -101,6 +121,8 @@ void cb_10ms(void) {
 void cb_led(void) {
     /* LED: 低5位直接反映按键状态, 便于调试 */
     LedPrint(keys);
+    /* 背景乐循环: 播完(Stop)后自动重新播放 */
+    if (GetPlayerMode() == enumModeStop) SetPlayerMode(enumModePlay);
 }
 
 void cb_hall(void) {
@@ -117,6 +139,7 @@ void main(void) {
     KeyInit();
     AdcInit(ADCexpEXT);
     BeepInit();
+    MusicPlayerInit();
     Uart2Init(38400, Uart2Usedfor485);
     HallInit();
     IrInit(NEC_R05d);
@@ -127,6 +150,10 @@ void main(void) {
     Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);
     LedPrint(0);
     Seg7Print(2, 10, 10, 10, 10, 10, 10, 10);  /* 显示 '2' 表示 Player 2 */
+
+    /* 循环背景音乐: 设置乐谱并开始播放(播完由 cb_led 自动重播) */
+    SetMusic(100, 0xFC, bgm_score, sizeof(bgm_score), enumMscNull);
+    SetPlayerMode(enumModePlay);
 
     SetEventCallBack(enumEventSys10mS, cb_10ms);
     SetEventCallBack(enumEventKey, cb_key);
