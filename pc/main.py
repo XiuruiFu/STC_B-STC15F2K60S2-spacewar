@@ -22,6 +22,11 @@ from config import (
     BLACKHOLE_RADIUS,
     BLACKHOLE_X,
     BLACKHOLE_Y,
+    BOSS_BULLET_MAX,
+    BOSS_BULLET_RADIUS,
+    BOSS_HP,
+    BOSS_IMAGE,
+    BOSS_ROT_SPEED,
     BULLET_MAX,
     BULLET_RADIUS,
     COLOR_BG_GAMEOVER,
@@ -31,6 +36,10 @@ from config import (
     COLOR_BG_MENU,
     COLOR_BLACKHOLE_FILL,
     COLOR_BLACKHOLE_RING,
+    COLOR_BOSS_BULLET,
+    COLOR_BOSS_FALLBACK,
+    COLOR_BOSS_HP_BORDER,
+    COLOR_BOSS_HP_FILL,
     COLOR_BULLET_P1,
     COLOR_BULLET_P1_DAY,
     COLOR_BULLET_P2,
@@ -66,12 +75,14 @@ HEAD_PC1 = 0x55
 SER_READ_SIZE = 512
 BULLETS_PER_PLAYER = BULLET_MAX  # 与 Host BULLET_MAX 一致
 
-# 状态帧布局由 BULLET_MAX 推导: 帧头2+state/menuSel2+飞船8+子弹(2*BULLET_MAX*3)+胜场2+flags1+bgMode1+easterEgg1+校验和1
+# 状态帧布局由 BULLET_MAX / BOSS_BULLET_MAX 推导
 FRAME_P1WINS = 12 + 2 * BULLETS_PER_PLAYER * 3
 FRAME_FLAGS = FRAME_P1WINS + 2
 FRAME_BGMODE = FRAME_FLAGS + 1
 FRAME_EASTER = FRAME_BGMODE + 1
-FRAME_LEN = FRAME_EASTER + 2
+FRAME_BOSS_HP = FRAME_EASTER + 1
+FRAME_BOSS_BSTART = FRAME_BOSS_HP + 1
+FRAME_LEN = FRAME_BOSS_BSTART + BOSS_BULLET_MAX * 3 + 1
 
 ST_MENU = 0
 ST_PLAYING = 1
@@ -85,6 +96,8 @@ FLAG_P1_DEAD = 0x01
 FLAG_P2_DEAD = 0x02
 FLAG_P1_WIN = 0x04
 FLAG_P2_WIN = 0x08
+FLAG_BOSS_WIN = 0x10
+FLAG_BOSS_LOSE = 0x20
 
 # 朝向角: 0=朝右, 逆时针增大, 1 字节 0~255 表示 0~360°
 def angle_to_rad(a: int) -> float:
@@ -114,11 +127,13 @@ class GameState:
         self.p1 = Ship()
         self.p2 = Ship()
         self.bullets = [Bullet() for _ in range(BULLETS_PER_PLAYER * 2)]
+        self.boss_bullets = [Bullet() for _ in range(BOSS_BULLET_MAX)]
         self.p1_wins = 0
         self.p2_wins = 0
         self.flags = 0
         self.bg_mode = BG_NIGHT
         self.easter_egg = False
+        self.boss_hp = 0
         self.frame_ok = False
 
     def parse(self, buf: bytes) -> bool:
@@ -149,6 +164,13 @@ class GameState:
         self.flags = buf[FRAME_FLAGS]
         self.bg_mode = buf[FRAME_BGMODE]
         self.easter_egg = buf[FRAME_EASTER] != 0
+        self.boss_hp = buf[FRAME_BOSS_HP]
+        n = FRAME_BOSS_BSTART
+        for i in range(BOSS_BULLET_MAX):
+            self.boss_bullets[i].active = buf[n] != 0
+            self.boss_bullets[i].x = buf[n + 1]
+            self.boss_bullets[i].y = buf[n + 2]
+            n += 3
         self.p1.dead = bool(self.flags & FLAG_P1_DEAD)
         self.p2.dead = bool(self.flags & FLAG_P2_DEAD)
         self.frame_ok = True
@@ -185,6 +207,18 @@ class Renderer:
         # 背景图片: 缩放铺满窗口; 缺失/加载失败时置 None, 绘制回退纯色背景
         self.bg_day = self._load_bg(BG_IMAGE_DAY, width, height)
         self.bg_night = self._load_bg(BG_IMAGE_NIGHT, width, height)
+        # BOSS 贴图: 缺失/加载失败时置 None(回退实心圆)
+        self.boss_img = self._load_image(BOSS_IMAGE)
+        # BOSS 内切圆直径(逻辑单位) = 2 * BH_R(黑洞半径即 BOSS 碰撞半径)
+        self.boss_diameter_px = int(BLACKHOLE_RADIUS * 2.0 * self.scale)
+
+    def _load_image(self, name: str):
+        try:
+            path = os.path.join(os.path.dirname(os.path.abspath(__file__)), BG_IMAGE_DIR, name)
+            img = self.pygame.image.load(path)
+            return img.convert_alpha()
+        except Exception:
+            return None
 
     def _load_bg(self, name: str, width: int, height: int):
         try:
@@ -236,6 +270,40 @@ class Renderer:
         self.pygame.draw.circle(self.screen, fill, (int(cx), int(cy)), int(r))
         self.pygame.draw.circle(self.screen, ring, (int(cx), int(cy)), int(r), 2)
 
+    def draw_boss(self) -> None:
+        cx, cy = self.to_screen(BLACKHOLE_X, BLACKHOLE_Y)
+        r = BLACKHOLE_RADIUS * self.scale
+        if self.boss_img is None:
+            # 缺图兜底: 实心圆
+            self.pygame.draw.circle(self.screen, COLOR_BOSS_FALLBACK, (int(cx), int(cy)), int(r))
+            return
+        # 缩放为覆盖碰撞圆的内切方形, 再旋转(按本地时间 50°/s, 纯视觉)
+        d = self.boss_diameter_px
+        img = self.pygame.transform.smoothscale(self.boss_img, (d, d))
+        # 圆形裁剪: 把方形图片裁成内切圆
+        mask = self.pygame.Surface((d, d), self.pygame.SRCALPHA)
+        self.pygame.draw.circle(mask, (255, 255, 255, 255), (d // 2, d // 2), d // 2)
+        img.blit(mask, (0, 0), special_flags=self.pygame.BLEND_RGBA_MIN)
+        angle = (time.time() * BOSS_ROT_SPEED) % 360.0
+        rot = self.pygame.transform.rotate(img, -angle)
+        rect = rot.get_rect(center=(int(cx), int(cy)))
+        self.screen.blit(rot, rect)
+
+    def draw_boss_bullet(self, b: Bullet) -> None:
+        if not b.active:
+            return
+        cx, cy = self.to_screen(b.x, b.y)
+        self.pygame.draw.circle(self.screen, COLOR_BOSS_BULLET, (int(cx), int(cy)), int(BOSS_BULLET_RADIUS * self.scale))
+
+    def draw_boss_hp(self, gs: GameState) -> None:
+        bar_w = 200
+        bar_h = 14
+        x = self.width // 2 - bar_w // 2
+        y = 12
+        ratio = max(0, gs.boss_hp) / BOSS_HP
+        self.pygame.draw.rect(self.screen, COLOR_BOSS_HP_BORDER, (x - 2, y - 2, bar_w + 4, bar_h + 4), 2)
+        self.pygame.draw.rect(self.screen, COLOR_BOSS_HP_FILL, (x, y, int(bar_w * ratio), bar_h))
+
     def draw_menu(self, gs: GameState) -> None:
         self.screen.fill(COLOR_BG_MENU)
         title = self.big_font.render("SPACEWAR!", True, COLOR_TITLE)
@@ -281,7 +349,10 @@ class Renderer:
             self.screen.blit(bg_img, (0, 0))
         else:
             self.screen.fill(bg)
-        self.draw_blackhole(gs.bg_mode == BG_DAY and not gs.easter_egg)
+        if gs.easter_egg:
+            self.draw_boss()
+        else:
+            self.draw_blackhole(gs.bg_mode == BG_DAY)
         if gs.p1.dead:
             self.draw_explosion(gs.p1.x, gs.p1.y)
         else:
@@ -294,20 +365,34 @@ class Renderer:
             self.draw_bullet(b, b1c)
         for b in gs.bullets[BULLETS_PER_PLAYER:]:
             self.draw_bullet(b, b2c)
+        if gs.easter_egg:
+            for bb in gs.boss_bullets:
+                self.draw_boss_bullet(bb)
         # HUD
         hud1 = self.font.render(f"P1 lives: {gs.p1.lives}", True, h1c)
         hud2 = self.font.render(f"P2 lives: {gs.p2.lives}", True, h2c)
         self.screen.blit(hud1, (10, 10))
         self.screen.blit(hud2, (self.width - hud2.get_width() - 10, 10))
+        if gs.easter_egg:
+            self.draw_boss_hp(gs)
 
     def draw_gameover(self, gs: GameState) -> None:
         self.screen.fill(COLOR_BG_GAMEOVER)
-        if gs.flags & FLAG_P1_WIN:
+        if gs.flags & FLAG_BOSS_WIN:
+            txt = self.big_font.render("BOSS DEFEATED!", True, COLOR_P1_SHIP)
+        elif gs.flags & FLAG_BOSS_LOSE:
+            txt = self.big_font.render("CO-OP FAILED", True, COLOR_P2_SHIP)
+        elif gs.flags & FLAG_P1_WIN:
             txt = self.big_font.render("PLAYER 1 WINS!", True, COLOR_P1_SHIP)
         elif gs.flags & FLAG_P2_WIN:
             txt = self.big_font.render("PLAYER 2 WINS!", True, COLOR_P2_SHIP)
         else:
             txt = self.big_font.render("GAME OVER", True, COLOR_TITLE)
+        if gs.flags & FLAG_BOSS_WIN:
+            # BOSS 被击毁: 中央爆炸特效
+            cx, cy = self.to_screen(BLACKHOLE_X, BLACKHOLE_Y)
+            self.pygame.draw.circle(self.screen, COLOR_EXPLOSION_OUTER, (int(cx), int(cy)), int(EXPLOSION_RADIUS * 2.5 * self.scale))
+            self.pygame.draw.circle(self.screen, COLOR_EXPLOSION_INNER, (int(cx), int(cy)), int(EXPLOSION_RADIUS * 1.5 * self.scale))
         self.screen.blit(txt, (self.width // 2 - txt.get_width() // 2, self.height // 2 - 40))
         wins = self.font.render(
             f"P1 wins: {gs.p1_wins}    P2 wins: {gs.p2_wins}", True, COLOR_MENU_WINS

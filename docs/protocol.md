@@ -41,9 +41,9 @@
 
 ---
 
-## 3. Host → PC 状态帧 (可变长度, 由 BULLET_MAX 推导)
+## 3. Host → PC 状态帧 (可变长度, 由 BULLET_MAX / BOSS_BULLET_MAX 推导)
 
-帧长 `N = 18 + 6*BULLET_MAX`（`BULLET_MAX` 为每船同时在场子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。
+帧长 `N = 19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`（`BULLET_MAX` 为每船玩家子弹上限，`BOSS_BULLET_MAX` 为 BOSS 子弹同屏上限；Host `config.h` 与 PC `config.py` 必须一致）。记 `M = BULLET_MAX`、`K = BOSS_BULLET_MAX`。
 
 | 偏移 | 字段 | 说明 |
 |------|------|------|
@@ -59,22 +59,24 @@
 | 9 | `p2y` | Player2 Y 坐标 |
 | 10 | `p2ang` | Player2 朝向角 |
 | 11 | `p2lives` | Player2 剩余生命 |
-| 12 ~ 12+6M-1 | 子弹区 | 共 `2*BULLET_MAX` 发，每发 3 字节 `(active, x, y)`，见下 |
+| 12 ~ 12+6M-1 | 玩家子弹区 | 共 `2*M` 发，每发 3 字节 `(active, x, y)` |
 | 12+6M | `p1wins` | Player1 累计胜场 |
 | 12+6M+1 | `p2wins` | Player2 累计胜场 |
 | 12+6M+2 | `flags` | 见下 |
 | 12+6M+3 | `bgMode` | 昼夜背景：0=夜晚，1=白天 |
 | 12+6M+4 | `easterEgg` | 彩蛋地图：0=否，1=是（本局） |
-| 12+6M+5 | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
+| 12+6M+5 | `bossHp` | BOSS 剩余血量（仅彩蛋地图有效） |
+| 12+6M+6 ~ +5+3K | BOSS 子弹区 | 共 `K` 发，每发 3 字节 `(active, x, y)` |
+| 12+6M+6+3K | 校验和 | `sum(byte[0..N-2]) & 0xFF` |
 
-> 其中 `M = BULLET_MAX`。
-
-子弹区布局（偏移 12 起，`2*M` 发）：
+玩家子弹区布局（偏移 12 起，`2*M` 发）：
 
 - `b[0..M-1]` 属于 **Player1**，`b[M..2M-1]` 属于 **Player2**。
 - 每发子弹占 3 字节：`active`(0/1)、`x`、`y`。
 - 子弹为圆形，无朝向字段；`active=0` 时坐标字段无效。
 - 每船同时在场子弹上限为 `BULLET_MAX` 发，达到上限后再开火不产生新子弹。
+
+BOSS 子弹区（偏移 `12+6M+6` 起，`K` 发）：每发 3 字节 `(active, x, y)`，规则同玩家子弹。
 
 `bgMode` 判定（Host 侧）：
 
@@ -82,11 +84,13 @@
 - `Rop > LIGHT_THRESHOLD(30)` → `bgMode = 1`（白天）；否则 `bgMode = 0`（夜晚）。
 - 游戏过程中亮度变化**不影响**已确定的 `bgMode`。
 
-`easterEgg`（彩蛋模式）：
+`easterEgg`（彩蛋模式 / 合作打 BOSS）：
 
 - 触发：从机霍尔（靠近/离开）→ 从机红外发魔数 `0xE1` → 主机红外收到并校验后武装。
 - 开局即消耗：主菜单"进入游戏"时若已武装，本局 `easterEgg=1` 并清零武装；一次性。
-- `easterEgg=1` 时 PC **忽略 `bgMode`**：背景纯白、洞固定黑洞（引力与夜晚一致）、飞船/子弹/HUD 用白天深色主题。
+- `easterEgg=1` 时 PC **忽略 `bgMode`**：背景纯白、**中央为 BOSS**（取代黑洞，无引力）、双方合作合力击毁 BOSS，飞船/子弹/HUD 用白天深色主题。
+- `bossHp`：BOSS 剩余血量（0~20），仅 `easterEgg=1` 时有效；`bossHp=0` 且 `state=GAMEOVER` 表示合作胜利。
+- 合作战 `flags` 用 bit4（BOSS 被击毁=双胜）、bit5（双方出局=失败）表达胜负；不写入 NVM 累计胜场。
 
 `flags` 位定义：
 
@@ -94,8 +98,10 @@
 |-----|------|
 | 0 | P1 死亡特效进行中（PC 显示爆炸） |
 | 1 | P2 死亡特效进行中 |
-| 2 | 本局 P1 胜利（GAMEOVER 态下有效） |
-| 3 | 本局 P2 胜利 |
+| 2 | 本局 P1 胜利（GAMEOVER 态下有效，PvP） |
+| 3 | 本局 P2 胜利（GAMEOVER 态下有效，PvP） |
+| 4 | 合作战 BOSS 被击毁，双方胜 |
+| 5 | 合作战双方出局，失败 |
 
 ---
 

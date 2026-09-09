@@ -33,6 +33,13 @@ BG_IMAGE_DIR = "assets"      # 相对 pc/ 目录
 BG_IMAGE_DAY = "day.jpg"     # 白天背景图(缺失时回退纯色背景)
 BG_IMAGE_NIGHT = "night.jpg" # 夜晚背景图(缺失时回退纯色背景)
 
+# ================= BOSS (彩蛋合作战 7.4) =================
+BOSS_BULLET_MAX = 12         # 与 Host config.h BOSS_BULLET_MAX 一致
+BOSS_HP = 15                 # 与 Host config.h BOSS_HP 一致 (用于血条)
+BOSS_ROT_SPEED = 50.0        # BOSS 图片旋转速度 (度/秒, 纯视觉)
+BOSS_IMAGE = "boss.jpg"      # BOSS 贴图 (pc/assets/ 下)
+BOSS_BULLET_RADIUS = 3.0     # BOSS 子弹绘制半径 (逻辑单位)
+
 # ================= 颜色主题 (RGB) =================
 COLOR_BG_MENU = (10, 10, 30)
 COLOR_BG_GAME = (0, 0, 0)
@@ -61,6 +68,12 @@ COLOR_HUD_P2_DAY = (160, 30, 30)
 
 # 彩蛋背景色 (7.3 彩蛋地图, 纯白)
 COLOR_BG_GAME_EASTER = (255, 255, 255)
+
+# BOSS 配色 (7.4 合作战)
+COLOR_BOSS_BULLET = (220, 0, 120)     # BOSS 子弹颜色
+COLOR_BOSS_FALLBACK = (90, 60, 150)   # BOSS 缺图回退实心圆颜色
+COLOR_BOSS_HP_FILL = (220, 40, 40)    # BOSS 血条填充色
+COLOR_BOSS_HP_BORDER = (60, 60, 60)   # BOSS 血条边框
 
 COLOR_BLACKHOLE_FILL = (0, 0, 0)
 COLOR_BLACKHOLE_RING = (120, 0, 120)

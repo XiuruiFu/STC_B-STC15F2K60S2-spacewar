@@ -32,6 +32,16 @@
 #define LIVES_MAX       3       /* 每局初始生命数 */
 #define RESPAWN_TICKS   100     /* 死亡后重生延时 (10ms ticks, 100 = 1s) */
 
+/* ================= BOSS (彩蛋合作战) ================= */
+#define BOSS_HP            15      /* BOSS 血量 (每发玩家子弹命中扣 1) */
+#define BOSS_BULLET_SPEED  1.2f    /* BOSS 子弹速度 */
+#define BOSS_BULLET_R      3       /* BOSS 子弹碰撞半径 */
+#define BOSS_BULLET_LIFE   120     /* BOSS 子弹寿命 (10ms ticks, 120 = 1.2s) */
+#define BOSS_BULLET_MAX    12      /* BOSS 子弹同屏上限 (改此值会改变协议帧长, 须同步 pc/config.py) */
+#define BOSS_FIRE_INTERVAL 300     /* BOSS 射击间隔 (10ms ticks, 300 = 3s) */
+#define BOSS_FIRE_COUNT    8       /* 每轮散射发数 */
+#define BOSS_FIRE_ROT      11      /* 每轮散射整体旋转步进 (256 制角度, ~15.5°) */
+
 /* ================= 光敏阈值 (E2 昼夜背景) ================= */
 #define LIGHT_THRESHOLD 30      /* 开始游戏瞬间 Rop > 阈值 -> 白天, 否则夜晚 (实测标定) */
 

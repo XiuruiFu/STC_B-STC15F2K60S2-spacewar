@@ -141,6 +141,8 @@ project/
 
 9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/easterEgg/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 18 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
 
+10. **`BOSS_BULLET_MAX` 同样须与协议帧长联动**：合作战 BOSS 子弹区追加在 `easterEgg`/`bossHp` 之后，`FRAME_TX_LEN = 19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`；PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 与 `config.BOSS_BULLET_MAX` 推导。改动任一子弹上限，两端都必须同步，否则帧错位。
+
 ---
 
 ## 5. 需求规格 (Requirements Specification)
@@ -198,9 +200,10 @@ project/
 - **Exit 行为**：Host 进入 `ST_EXITED` 后延时 1 秒（`exit_tick=100`）自动回菜单；PC 检测到 `state==ST_EXITED` 直接关闭窗口退出程序（**无 EXITED 画面**）。
 - **状态机常量**：`ST_MENU=0`、`ST_PLAYING=1`、`ST_GAMEOVER=2`、`ST_EXITED=3`。
 - **按键掩码位**（Host 与 Slave 一致）：`0x01` 前进(Key3)、`0x02` 后退(Key1)、`0x04` 发射/确认(Key2)、`0x08` 左转(NavDown)、`0x10` 右转(NavUp)、`0x20` 菜单上移(NavLeft)、`0x40` 菜单下移(NavRight)。
-- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `18 + 6*BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
-- **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）。
+- **协议帧**：Slave→Host 4 字节；Host→PC 可变长度 `19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX` 字节（BULLET_MAX 为每船子弹上限，BOSS_BULLET_MAX 为 BOSS 子弹上限；Host `config.h` 与 PC `config.py` 必须一致）。详见 `docs/protocol.md`（三端唯一权威契约）。
+- **可调物理常量**（已迁入 `source/config.h`）：`THRUST=0.05f`（推力）、`ROT_SPEED=2`（转速）、`MAX_SPEED=2.0f`（限速）、`BULLET_SPEED=2.0f`（子弹速度）、`BULLET_LIFE`（子弹寿命 ticks）、`BULLET_MAX`（每船子弹上限）、`LIVES_MAX=3`（生命）、`BH_R=12`（黑洞半径）、`FIELD=256`（场域）、`RESPAWN_TICKS=100`（重生延时）、`LIGHT_THRESHOLD=30`（光敏阈值）、`GRAVITY`/`GRAVITY_MIN_R`（引力系统）、`BOSS_HP=15`/`BOSS_BULLET_*`（合作战 BOSS）。
 - **昼夜背景**（E2 已实现）：状态帧含 `bgMode` 字节（0=夜晚、1=白天）；`bgMode` 在"开始游戏"瞬间由 `GetADC().Rop > LIGHT_THRESHOLD` 判定，游戏过程中锁定不变。
+- **合作打 BOSS**（7.4 已实现）：`easterEgg=1` 时进入纯合作 PvE，中央 BOSS（固定、无引力、圆碰撞 `BH_R`、周期旋转散射）取代黑洞；双方合力击毁 BOSS（`bossHp` 归零）共同胜利，双方都出局则失败；友伤关闭，不写 NVM 胜场。
 
 ---
 
@@ -245,6 +248,37 @@ project/
   - 飞船/子弹/HUD 沿用**白天主题配色**（深色，纯白背景上可见）。
 - **主机 LED**：处于 `ST_MENU` 且 `g_easterArmed` 时，LED 持续**流水灯**（l0→l1→…→l7→l0 循环，参考"八位数码管+流水灯"样例 `a=(a==0)?1:(a<<1)`）；进入游戏后恢复常规 LED。
 - **协议**：状态帧新增 1 字节 `easterEgg`（0/1），位于 `bgMode` 之后 → `FRAME_TX_LEN = 18 + 6*BULLET_MAX`；PC 解析该字节并据此渲染（`easterEgg=1` 时忽略 `bgMode` 绘制纯白+黑洞）。
+
+### 7.4 彩蛋内容 —— 双人合作打 BOSS (Co-op Boss Battle)
+
+> 彩蛋地图（`easterEgg=1`）的**具体游戏内容**。已与用户对齐，实现时严格遵守。
+
+- **总体**：`easterEgg=1` 时进入**纯合作 PvE** 模式，双方合力击毁中央 **BOSS**，共同的胜利/失败。此时**不再是 PvP 对抗**。
+- **BOSS 取代黑洞**：
+  - 取消中央黑洞（不再吞飞船/吞子弹），**无引力**（`GRAVITY` 系统在本模式不生效）。
+  - BOSS **固定于中央** `(128,128)`，不移动。
+  - 碰撞体积保持**圆形**，半径沿用 `BH_R=12`（与原黑洞相同）。
+  - 飞船碰到 BOSS 即死（沿用 `BH_R + SHIP_R` 碰撞判定）；玩家子弹命中 BOSS 扣血并消失（`BH_R + BULLET_R` 判定）。
+- **BOSS 血量与胜负**：
+  - BOSS **血量 `15`**，每发玩家子弹命中扣 1 血。
+  - **胜利**（BOSS 血归零）：双方**共同胜利**；BOSS 爆炸特效 + 蜂鸣，PC 显示 `BOSS DEFEATED!`，中央爆炸，场上残留 BOSS 子弹全部清除，2 秒后回菜单。
+  - **失败**：双方都出局才结束（各自 3 条命、死亡 1 秒后重生；单方出局比赛继续）；PC 显示 `CO-OP FAILED`，2 秒后回菜单。
+  - 合作战**不写入 NVM 累计胜场**（`p1wins/p2wins` 不变）。
+- **BOSS 射击**：**周期旋转散射**——每 **3 秒**（300 ticks）朝四周均布射 **8 发**，每轮整体角度**旋转 `15°`**，形成螺旋弹幕。
+- **BOSS 反击技能**：BOSS 每被玩家子弹命中 1 发（扣 1 血的同时），**朝发射该子弹的飞船当前位置**反击 1 发（`boss_retaliate`，按"洞→飞船"方向归一化向量，速度/寿命同 BOSS 子弹）。反击弹**复用同一 BOSS 子弹池**（无空位则此次不发射）。
+- **玩家子弹规则（合作模式）**：
+  - **友伤关闭**：玩家子弹互不伤害（取消 `bullet1↔ship2`、`bullet2↔ship1` 命中判定）。
+  - 玩家子弹只对 BOSS 生效；玩家子弹与 BOSS 子弹**互不碰撞**（各自穿过）。
+- **BOSS 子弹参数**（迁入 `config.h`）：
+  - 速度 `Boss 子弹速度 = 1.2f`、碰撞半径 `3`、同屏上限 `12`（散射 8 + 反击占用同一池）、**寿命 `120`**（10ms ticks）、每轮散射步进 `15°`（256 制 ~ 10~11 单位）。
+- **BOSS 贴图与旋转**：
+  - 图片 `pc/assets/boss.jpg`（已就位，近正方形，内切圆为 BOSS 圆，四角透明）。
+  - 旋转由 **PC 端按本地时间**计算（**50°/s**），纯视觉，**不进协议**（碰撞是圆形，与角度无关）。
+  - 尺寸：缩放到**覆盖碰撞圆**（直径 = `2 × BH_R = 24` 逻辑单位）。
+  - **圆形裁剪**（选项 B）：blit 时用圆形遮罩把方形图片裁成内切圆。
+  - 缺图兜底：回退绘制实心圆；不得崩溃。
+- **PC 呈现**：纯白背景（延续彩蛋主题）；顶部中央新增 **BOSS 血条**（剩余 HP/20）；双方生命 HUD 保留；BOSS 死亡 → 中央爆炸 + `BOSS DEFEATED!` 结算画面。
+- **协议扩展**：状态帧需新增传输 **BOSS 血量** 与 **BOSS 子弹**（复用现在的子弹区机制，`FRAME_TX_LEN` 由宏推导，禁止写死偏移）。具体字节布局实现前一并写入 `docs/protocol.md`。
 
 ## 8. 人机协同 Git 工作流规范 (Human-AI Git Workflow)
 

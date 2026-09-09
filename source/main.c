@@ -28,8 +28,9 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 /* 彩蛋魔数(红外) */
 #define EASTER_MAGIC 0xE1
 
-/* Host->PC 状态帧布局, 全部由 BULLET_MAX 推导(避免改配置时帧错位):
- * 帧头2 + state/menuSel2 + 双方飞船8 + 子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + easterEgg1 + 校验和1 */
+/* Host->PC 状态帧布局, 全部由 BULLET_MAX / BOSS_BULLET_MAX 推导(避免改配置时帧错位):
+ * 帧头2 + state/menuSel2 + 双方飞船8 + 玩家子弹(2*BULLET_MAX*3) + 胜场2 + flags1 + bgMode1 + easterEgg1
+ * + BOSS血量1 + BOSS子弹(BOSS_BULLET_MAX*3) + 校验和1 */
 #define FRAME_BULLET_BASE  12
 #define FRAME_BULLET_BYTES (BULLET_MAX * 3)
 #define FRAME_P1WINS       (FRAME_BULLET_BASE + 2 * FRAME_BULLET_BYTES)
@@ -37,11 +38,18 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 #define FRAME_FLAGS        (FRAME_P2WINS + 1)
 #define FRAME_BGMODE       (FRAME_FLAGS + 1)
 #define FRAME_EASTER       (FRAME_BGMODE + 1)
-#define FRAME_TX_LEN       (FRAME_EASTER + 2)   /* +1 校验和 */
+#define FRAME_BOSS_HP      (FRAME_EASTER + 1)
+#define FRAME_BOSS_BSTART  (FRAME_BOSS_HP + 1)
+#define FRAME_BOSS_BYTES   (BOSS_BULLET_MAX * 3)
+#define FRAME_TX_LEN       (FRAME_BOSS_BSTART + FRAME_BOSS_BYTES + 1)   /* +1 校验和 */
 
 /* 昼夜背景模式 */
 #define BG_NIGHT  0
 #define BG_DAY    1
+
+/* 胜者 flags 位(扩展, 原 0x01/0x02=死亡特效, 0x04/0x08=P1/P2胜) */
+#define FLAG_BOSS_WIN   0x10   /* 合作战 BOSS 被击毁, 双方胜 */
+#define FLAG_BOSS_LOSE  0x20   /* 合作战双方出局, 失败 */
 
 /* ================= 状态机 ================= */
 #define ST_MENU     0
@@ -79,6 +87,7 @@ typedef struct {
 /* ================= 全局状态 ================= */
 xdata Ship ship1, ship2;
 xdata Bullet bullet1[BULLET_MAX], bullet2[BULLET_MAX];
+xdata Bullet boss_bullets[BOSS_BULLET_MAX];
 
 xdata unsigned char g_state;       /* 状态机 */
 xdata unsigned char g_menuSel;     /* 菜单选中项 */
@@ -87,10 +96,14 @@ xdata unsigned char p2_keys;       /* P2 按住状态掩码 */
 xdata unsigned char p2_keys_prev;  /* P2 上一帧掩码(用于开火边沿) */
 xdata unsigned char p1_fire_edge;  /* P1 开火边沿标志 */
 xdata unsigned char p1wins, p2wins;
-xdata unsigned char g_flags;       /* bit0/1 爆炸特效, bit2/3 胜者 */
+xdata unsigned char g_flags;       /* bit0/1 爆炸特效, bit2/3 胜者, bit4/5 BOSS 胜负 */
 xdata unsigned char g_bgMode;      /* 背景模式: BG_NIGHT/BG_DAY (开始游戏瞬间由光敏判定) */
 xdata unsigned char g_easterArmed; /* 彩蛋已武装(红外触发, 开局消耗) */
 xdata unsigned char g_easterEgg;   /* 本局彩蛋地图标志(0/1) */
+xdata unsigned char g_bossHp;      /* BOSS 剩余血量 */
+xdata unsigned char g_bossAlive;   /* BOSS 是否在场 (1=在场) */
+xdata unsigned int  g_bossFireTick;/* BOSS 射击倒计时 */
+xdata unsigned char g_bossFireAng; /* BOSS 散射基准角(256制) */
 xdata unsigned char g_led_run;     /* 彩蛋武装流水灯位(菜单态) */
 xdata unsigned char gameover_tick; /* GAMEOVER 停留计时 */
 xdata unsigned char exit_tick;     /* EXITED 停留计时 */
@@ -114,6 +127,11 @@ void clear_bullets(Bullet *arr) {
     for (i = 0; i < BULLET_MAX; i++) arr[i].active = 0;
 }
 
+void clear_boss_bullets(void) {
+    unsigned char i;
+    for (i = 0; i < BOSS_BULLET_MAX; i++) boss_bullets[i].active = 0;
+}
+
 /* ================= 菜单导航 ================= */
 void menu_move(signed char dir) {
     signed char s = (signed char)g_menuSel + dir;
@@ -132,6 +150,12 @@ void menu_confirm(void) {
             /* 彩蛋武装则本局进入彩蛋地图并消耗(一次性) */
             g_easterEgg = g_easterArmed;
             g_easterArmed = 0;
+            /* 彩蛋地图重置 BOSS(普通局无 BOSS) */
+            g_bossHp = BOSS_HP;
+            g_bossAlive = g_easterEgg;
+            g_bossFireTick = BOSS_FIRE_INTERVAL;
+            g_bossFireAng = 0;
+            clear_boss_bullets();
             ship1.x = 64;  ship1.y = 128; ship1.vx = 0; ship1.vy = 0;
             ship1.ang = 0; ship1.lives = LIVES_MAX; ship1.respawn = 0; ship1.active = 1;
             ship2.x = 192; ship2.y = 128; ship2.vx = 0; ship2.vy = 0;
@@ -255,22 +279,24 @@ void update_ship(Ship *s, unsigned char keys) {
         if (keys & K_FWD)  { s->vx += dirx * THRUST; s->vy += diry * THRUST; }
         if (keys & K_BACK) { s->vx -= dirx * THRUST; s->vy -= diry * THRUST; }
     }
-    /* 引力/斥力 (洞在中心, 普通欧氏方向即可, 环绕分支不生效):
+    /* 引力/斥力 (合作战 BOSS 无引力; 普通局洞在中心, 普通欧氏方向即可, 环绕分支不生效):
      * 力大小 F = GRAVITY / max(r², GRAVITY_MIN_R²); 仅影响飞船, 受 MAX_SPEED 钳制 */
-    gx = (float)BH_X - s->x;   /* 飞船->洞 向量 */
-    gy = (float)BH_Y - s->y;
-    r2 = gx*gx + gy*gy;
-    if (r2 >= (float)(GRAVITY_MIN_R * GRAVITY_MIN_R)) r = sqrt(r2);
-    else r = (float)GRAVITY_MIN_R;
-    f = GRAVITY / (r * r);
-    if (g_bgMode == BG_DAY && !g_easterEgg) {
-        /* 白洞斥力: 方向 = 洞->飞船 = (-gx, -gy); 彩蛋地图固定黑洞, 不走此分支 */
-        s->vx -= f * gx / r;
-        s->vy -= f * gy / r;
-    } else {
-        /* 黑洞引力: 方向 = 飞船->洞 = (gx, gy) */
-        s->vx += f * gx / r;
-        s->vy += f * gy / r;
+    if (!g_easterEgg) {
+        gx = (float)BH_X - s->x;   /* 飞船->洞 向量 */
+        gy = (float)BH_Y - s->y;
+        r2 = gx*gx + gy*gy;
+        if (r2 >= (float)(GRAVITY_MIN_R * GRAVITY_MIN_R)) r = sqrt(r2);
+        else r = (float)GRAVITY_MIN_R;
+        f = GRAVITY / (r * r);
+        if (g_bgMode == BG_DAY) {
+            /* 白洞斥力: 方向 = 洞->飞船 = (-gx, -gy) */
+            s->vx -= f * gx / r;
+            s->vy -= f * gy / r;
+        } else {
+            /* 黑洞引力: 方向 = 飞船->洞 = (gx, gy) */
+            s->vx += f * gx / r;
+            s->vy += f * gy / r;
+        }
     }
     /* 限速 */
     if (s->vx > MAX_SPEED) s->vx = MAX_SPEED;
@@ -300,10 +326,110 @@ void update_bullets(Bullet *arr) {
     for (i = 0; i < BULLET_MAX; i++) update_bullet(&arr[i]);
 }
 
+void update_boss_bullets(void) {
+    unsigned char i;
+    for (i = 0; i < BOSS_BULLET_MAX; i++) update_bullet(&boss_bullets[i]);
+}
+
+/* ================= BOSS ================= */
+void boss_fire(void) {
+    unsigned char i, fired, ang;
+    fired = 0;
+    for (i = 0; i < BOSS_BULLET_MAX && fired < BOSS_FIRE_COUNT; i++) {
+        if (boss_bullets[i].active) continue;
+        ang = (unsigned char)(g_bossFireAng + fired * (256 / BOSS_FIRE_COUNT));
+        boss_bullets[i].vx = sin_table[(unsigned char)(ang + 64)] * BOSS_BULLET_SPEED;
+        boss_bullets[i].vy = -sin_table[ang] * BOSS_BULLET_SPEED;
+        boss_bullets[i].x = (float)BH_X + boss_bullets[i].vx * (float)(BH_R + BOSS_BULLET_R);
+        boss_bullets[i].y = (float)BH_Y + boss_bullets[i].vy * (float)(BH_R + BOSS_BULLET_R);
+        boss_bullets[i].life = BOSS_BULLET_LIFE;
+        boss_bullets[i].active = 1;
+        fired++;
+    }
+    g_bossFireAng = (unsigned char)(g_bossFireAng + BOSS_FIRE_ROT);
+}
+
+/* 反击弹: 朝目标飞船当前位置射 1 发(复用 BOSS 子弹池, 无空位则不发射) */
+void boss_retaliate(Ship *target) {
+    float dx, dy, len;
+    unsigned char i;
+    for (i = 0; i < BOSS_BULLET_MAX; i++) {
+        if (boss_bullets[i].active) continue;
+        dx = target->x - (float)BH_X;
+        dy = target->y - (float)BH_Y;
+        len = sqrt(dx * dx + dy * dy);
+        if (len < 0.5f) { dx = 1.0f; dy = 0.0f; len = 1.0f; }
+        boss_bullets[i].vx = dx / len * BOSS_BULLET_SPEED;
+        boss_bullets[i].vy = dy / len * BOSS_BULLET_SPEED;
+        boss_bullets[i].x = (float)BH_X + boss_bullets[i].vx * (float)(BH_R + BOSS_BULLET_R);
+        boss_bullets[i].y = (float)BH_Y + boss_bullets[i].vy * (float)(BH_R + BOSS_BULLET_R);
+        boss_bullets[i].life = BOSS_BULLET_LIFE;
+        boss_bullets[i].active = 1;
+        return;
+    }
+}
+
+/* 玩家子弹命中 BOSS: 扣 1 血, 并向该飞船当前位置反击 1 发 */
+void boss_damage(unsigned char player) {
+    if (g_bossAlive == 0) return;
+    if (g_bossHp > 0) g_bossHp--;
+    boss_retaliate(player == 0 ? &ship1 : &ship2);
+    if (g_bossHp == 0) {
+        g_bossAlive = 0;
+        g_flags |= FLAG_BOSS_WIN;
+        g_state = ST_GAMEOVER;
+        gameover_tick = 200;
+        clear_boss_bullets();
+        SetBeep(500, 30);
+    }
+}
+
 /* ================= 碰撞检测 ================= */
+void check_collisions_boss(void) {
+    float ship_r2, bullet_r2;
+    unsigned char i;
+    ship_r2 = (float)(BH_R + SHIP_R) * (BH_R + SHIP_R);
+    /* 飞船撞 BOSS 即死 */
+    if (g_bossAlive) {
+        if (ship1.active && dist2_wrap(ship1.x, ship1.y, (float)BH_X, (float)BH_Y) < ship_r2)
+            kill_ship(0);
+        if (ship2.active && dist2_wrap(ship2.x, ship2.y, (float)BH_X, (float)BH_Y) < ship_r2)
+            kill_ship(1);
+    }
+    /* 玩家子弹命中 BOSS 扣血(并触发反击) */
+    if (g_bossAlive) {
+        bullet_r2 = (float)(BH_R + BULLET_R) * (BH_R + BULLET_R);
+        for (i = 0; i < BULLET_MAX; i++) {
+            if (bullet1[i].active && dist2_wrap(bullet1[i].x, bullet1[i].y, (float)BH_X, (float)BH_Y) < bullet_r2) {
+                bullet1[i].active = 0;
+                boss_damage(0);
+            }
+            if (bullet2[i].active && dist2_wrap(bullet2[i].x, bullet2[i].y, (float)BH_X, (float)BH_Y) < bullet_r2) {
+                bullet2[i].active = 0;
+                boss_damage(1);
+            }
+        }
+    }
+    /* BOSS 子弹命中飞船 */
+    bullet_r2 = (float)(BOSS_BULLET_R + SHIP_R) * (BOSS_BULLET_R + SHIP_R);
+    for (i = 0; i < BOSS_BULLET_MAX; i++) {
+        if (!boss_bullets[i].active) continue;
+        if (ship1.active && dist2_wrap(boss_bullets[i].x, boss_bullets[i].y, ship1.x, ship1.y) < bullet_r2) {
+            boss_bullets[i].active = 0;
+            kill_ship(0);
+        }
+        if (ship2.active && dist2_wrap(boss_bullets[i].x, boss_bullets[i].y, ship2.x, ship2.y) < bullet_r2) {
+            boss_bullets[i].active = 0;
+            kill_ship(1);
+        }
+    }
+}
+
 void check_collisions(void) {
     float r2, bh_r2, bhr_b;
     unsigned char i;
+    /* 彩蛋合作战走独立碰撞规则(友伤关闭, 只打 BOSS) */
+    if (g_easterEgg) { check_collisions_boss(); return; }
     bh_r2 = (float)(BH_R+SHIP_R)*(BH_R+SHIP_R);
     bhr_b = (float)(BH_R+BULLET_R)*(BH_R+BULLET_R);
     /* 黑洞吞飞船 */
@@ -335,6 +461,17 @@ void check_collisions(void) {
 /* ================= 胜负判定 ================= */
 void check_winner(void) {
     if (g_state != ST_PLAYING) return;
+    if (g_easterEgg) {
+        /* 合作战失败: 双方都出局(0 命且不再重生) */
+        if (ship1.lives == 0 && ship1.respawn == 0 && ship1.active == 0 &&
+            ship2.lives == 0 && ship2.respawn == 0 && ship2.active == 0) {
+            g_flags |= FLAG_BOSS_LOSE;
+            g_state = ST_GAMEOVER;
+            gameover_tick = 200;
+            SetBeep(300, 30);
+        }
+        return;
+    }
     if (ship1.lives == 0 && ship1.respawn == 0 && ship1.active == 0) {
         /* P1 判负, P2 胜 */
         p2wins++;
@@ -386,6 +523,13 @@ void send_frame(void) {
     uart1_tx[FRAME_FLAGS] = g_flags;
     uart1_tx[FRAME_BGMODE] = g_bgMode;
     uart1_tx[FRAME_EASTER] = g_easterEgg;
+    uart1_tx[FRAME_BOSS_HP] = g_bossHp;
+    n = FRAME_BOSS_BSTART;
+    for (i = 0; i < BOSS_BULLET_MAX; i++) {
+        uart1_tx[n++] = boss_bullets[i].active;
+        uart1_tx[n++] = (unsigned char)boss_bullets[i].x;
+        uart1_tx[n++] = (unsigned char)boss_bullets[i].y;
+    }
     sum = 0;
     for (i = 0; i < (FRAME_TX_LEN - 1); i++) sum += uart1_tx[i];
     uart1_tx[FRAME_TX_LEN - 1] = sum;
@@ -438,6 +582,17 @@ void cb_10ms(void) {
         update_ship(&ship2, p2_keys);
         update_bullets(bullet1);
         update_bullets(bullet2);
+        /* 合作战: BOSS 射击 + BOSS 子弹积分 */
+        if (g_easterEgg) {
+            if (g_bossAlive && g_bossFireTick > 0) {
+                g_bossFireTick--;
+                if (g_bossFireTick == 0) {
+                    boss_fire();
+                    g_bossFireTick = BOSS_FIRE_INTERVAL;
+                }
+            }
+            update_boss_bullets();
+        }
         check_collisions();
         check_winner();
     }
@@ -576,6 +731,10 @@ void main(void) {
     g_bgMode = BG_NIGHT;
     g_easterArmed = 0;
     g_easterEgg = 0;
+    g_bossHp = BOSS_HP;
+    g_bossAlive = 0;
+    g_bossFireTick = 0;
+    g_bossFireAng = 0;
     g_led_run = 0;
     gameover_tick = 0;
     exit_tick = 0;
@@ -584,6 +743,7 @@ void main(void) {
     ship1.active = 0; ship2.active = 0;
     clear_bullets(bullet1);
     clear_bullets(bullet2);
+    clear_boss_bullets();
     SetDisplayerArea(0, 7);
     Seg7Print(10, 10, 10, 10, 10, 10, 10, 10);
     LedPrint(0);
