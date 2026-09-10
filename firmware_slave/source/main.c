@@ -67,35 +67,35 @@ code char decode_table[] = {0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f,0x
 //     0x00,0x00
 // };
 
-unsigned char bgm_score[] = {
-    /* 第一句：噔~(1拍) 噔~(1拍) */
-    0x26,0x10, 0x33,0x10,             /* La(A4) Mi(E5) */
-    /* 滴滴滴滴 滴滴嘟~ (每音1/4拍，最后落脚半拍) */
-    0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
-    0x31,0x04, 0x32,0x04, 0x33,0x08,  /* Do(C5) Re(D5) Mi(E5) */
+// unsigned char bgm_score[] = {
+//     /* 第一句：噔~(1拍) 噔~(1拍) */
+//     0x26,0x10, 0x33,0x10,             /* La(A4) Mi(E5) */
+//     /* 滴滴滴滴 滴滴嘟~ (每音1/4拍，最后落脚半拍) */
+//     0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
+//     0x31,0x04, 0x32,0x04, 0x33,0x08,  /* Do(C5) Re(D5) Mi(E5) */
 
-    /* 第二句：噔~(1拍) 噔~(1拍) */
-    0x26,0x10, 0x33,0x10,             /* La(A4) Mi(E5) */
-    /* 滴滴滴滴 滴滴嘟~（回归主音） */
-    0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
-    0x31,0x04, 0x27,0x04, 0x26,0x08,  /* Do(C5) Si(B4) La(A4) */
+//     /* 第二句：噔~(1拍) 噔~(1拍) */
+//     0x26,0x10, 0x33,0x10,             /* La(A4) Mi(E5) */
+//     /* 滴滴滴滴 滴滴嘟~（回归主音） */
+//     0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
+//     0x31,0x04, 0x27,0x04, 0x26,0x08,  /* Do(C5) Si(B4) La(A4) */
 
-    /* 第三句：大三和弦向上爬音 (紧张感，每音1/4拍) */
-    0x24,0x04, 0x26,0x04, 0x31,0x04, 0x34,0x04, /* Fa(F4) La(A4) Do(C5) Fa(F5) */
-    0x33,0x04, 0x32,0x04, 0x31,0x04, 0x27,0x04, /* Mi(E5) Re(D5) Do(C5) Si(B4) */
-    0x31,0x20,                        /* Do(C5) -- 保持2拍 */
+//     /* 第三句：大三和弦向上爬音 (紧张感，每音1/4拍) */
+//     0x24,0x04, 0x26,0x04, 0x31,0x04, 0x34,0x04, /* Fa(F4) La(A4) Do(C5) Fa(F5) */
+//     0x33,0x04, 0x32,0x04, 0x31,0x04, 0x27,0x04, /* Mi(E5) Re(D5) Do(C5) Si(B4) */
+//     0x31,0x20,                        /* Do(C5) -- 保持2拍 */
 
-    /* 第四句：继续爬音，情绪最高潮 */
-    0x25,0x04, 0x27,0x04, 0x32,0x04, 0x35,0x04, /* So(G4) Si(B4) Re(D5) So(G5) */
-    0x34,0x04, 0x33,0x04, 0x32,0x04, 0x31,0x04, /* Fa(F5) Mi(E5) Re(D5) Do(C5) */
-    0x32,0x20,                        /* Re(D5) -- 保持2拍 */
+//     /* 第四句：继续爬音，情绪最高潮 */
+//     0x25,0x04, 0x27,0x04, 0x32,0x04, 0x35,0x04, /* So(G4) Si(B4) Re(D5) So(G5) */
+//     0x34,0x04, 0x33,0x04, 0x32,0x04, 0x31,0x04, /* Fa(F5) Mi(E5) Re(D5) Do(C5) */
+//     0x32,0x20,                        /* Re(D5) -- 保持2拍 */
 
-    /* 尾句：快速下行回到原点 */
-    0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
-    0x31,0x04, 0x27,0x04, 0x26,0x08,  /* Do(C5) Si(B4) La(A4) */
+//     /* 尾句：快速下行回到原点 */
+//     0x36,0x04, 0x35,0x04, 0x33,0x04, 0x32,0x04, /* La(A5) So(G5) Mi(E5) Re(D5) */
+//     0x31,0x04, 0x27,0x04, 0x26,0x08,  /* Do(C5) Si(B4) La(A4) */
     
-    0x00,0x00
-};
+//     0x00,0x00
+// };
 
 /* 按键掩码位 (与 Host 协议一致) */
 #define K_FWD   0x01
@@ -191,11 +191,11 @@ void cb_led(void) {
     /* LED: 低5位直接反映按键状态, 便于调试 */
     LedPrint(keys);
     /* 背景乐循环: 播完(Stop)后自动重新播放 */
-    if (GetPlayerMode() != enumModePlay) {
+    /* if (GetPlayerMode() != enumModePlay) {
         // MusicPlayerInit();
 		SetMusic(250, 0xFA, bgm_score, sizeof(bgm_score), enumMscNull);
         SetPlayerMode(enumModePlay);
-    }
+    } */
 }
 
 void cb_hall(void) {
@@ -211,8 +211,8 @@ void main(void) {
     DisplayerInit();
     KeyInit();
     AdcInit(ADCexpEXT);
-    BeepInit();
-    MusicPlayerInit();
+    // BeepInit();
+    // MusicPlayerInit();
     Uart2Init(38400, Uart2Usedfor485);
     HallInit();
     IrInit(NEC_R05d);
@@ -226,8 +226,8 @@ void main(void) {
     Seg7Print(2, 10, 10, 10, 10, 10, 10, 10);  /* 显示 '2' 表示 Player 2 */
 
     /* 循环背景音乐: 设置乐谱并开始播放(播完由 cb_led 自动重播) */
-    SetMusic(250, 0xFA, bgm_score, sizeof(bgm_score), enumMscNull);
-    SetPlayerMode(enumModePlay);
+    // SetMusic(250, 0xFA, bgm_score, sizeof(bgm_score), enumMscNull);
+    // SetPlayerMode(enumModePlay);
 
     SetEventCallBack(enumEventSys10mS, cb_10ms);
     SetEventCallBack(enumEventKey, cb_key);
