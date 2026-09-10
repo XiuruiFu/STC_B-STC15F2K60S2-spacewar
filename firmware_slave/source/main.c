@@ -10,6 +10,7 @@
 #include "hall.H"
 #include "IR.h"
 #include "vib.h"
+#include "FM_Radio.h"
 
 code unsigned long SysClock = 11059200;   // 11.0592MHz
 
@@ -123,6 +124,7 @@ xdata unsigned int  send_tick;   /* 发送节拍 */
 xdata unsigned char enable_music;
 xdata unsigned char uart2_tx[5]; /* 发送缓冲(须全局, 异步发送期间不覆盖) */
 code  unsigned char ir_tx[1] = {EASTER_MAGIC}; /* 彩蛋红外数据(不防抖, 霍尔触发即发) */
+struct_FMRadio FM = {918, 6, 0xff, 0, 0xff};
 
 void cb_key(void) {
     unsigned char k;
@@ -229,7 +231,8 @@ void main(void) {
     HallInit();
     IrInit(NEC_R05d);
     VibInit();
-
+	FMRadioInit(FM);
+	
     keys = 0; keys_prev = 0; fire_edge = 0;
     shield = 0;
     send_tick = 0;
