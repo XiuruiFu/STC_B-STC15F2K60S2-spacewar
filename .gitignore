@@ -20,6 +20,11 @@ __pycache__/
 *.pyc
 .uv/
 
+# 报告/参考文档(不入库)
+*.doc
+*.docx
+*.pdf
+
 # 系统
 .DS_Store
 Thumbs.db

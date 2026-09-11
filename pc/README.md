@@ -26,4 +26,4 @@ uv run python main.py --sim
 
 ## 协议
 
-见 `../docs/protocol.md`。串口 115200，24 字节状态帧。
+见 `../docs/protocol.md`。串口 115200，可变长状态帧（`20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX` 字节，与 `config.py` 联动）。

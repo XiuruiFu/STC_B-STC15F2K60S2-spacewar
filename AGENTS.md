@@ -86,25 +86,34 @@
 ```text
 project/
 ├── AGENTS.md               # 本文档
+├── README.md               # 项目说明
 ├── docs/
 │   └── protocol.md         # 通信协议契约(三端唯一权威)
 ├── source/                 # Host MCU 工程源码
-│   ├── main.c              # Host: 物理引擎+状态机+双串口+菜单
+│   ├── main.c              # Host: 物理引擎+状态机+双串口+菜单+彩蛋+BOSS+护盾
+│   ├── config.h            # 统一可调配置(物理常量/阈值/BOSS/护盾)
 │   ├── sin_table.h         # 256 项 float 正弦查表(避免 8051 三角函数)
 │   └── STCBSP_V3.6.LIB     # BSP 库
-├── inc/                    # BSP 头文件(共享)
+├── inc/                    # BSP 头文件(Host include 路径, 共享)
+│   ├── sys.H / adc.h / Key.H / uart1.h / uart2.h
+│   ├── displayer.h / Beep.h / DS1302.h / IR.h / hall.H / music.h ...
+│   └── temp.h              # NTC ADC→温度换算(Host 副本)
 ├── STC_Demo.uvproj         # Host Keil 工程
 ├── firmware_slave/         # Slave MCU 独立工程
-│   ├── source/main.c       # Slave: 按键采集+RS485 上传
-│   ├── inc/                # (复制自 inc/)
+│   ├── source/main.c       # Slave: 按键采集+RS485 上传+背景音乐+温度护盾
+│   ├── inc/                # (复制自 inc/, 含 temp.h)
 │   └── Slave.uvproj        # Slave Keil 工程
 └── pc/                     # PC 渲染器(uv 管理)
     ├── main.py             # pygame 渲染 + pyserial
-    └── pyproject.toml
+    ├── config.py           # 渲染参数/颜色主题(与 Host config.h 联动)
+    ├── pyproject.toml
+    ├── uv.lock
+    └── assets/             # day.jpg / night.jpg / boss.jpg
 ```
 
 - 编译：Host 与 Slave 分别在 Keil µVision 5 中打开对应 `.uvproj` 编译下载。
 - PC 端：`uv sync` 后 `uv run python main.py --port COMx` 运行。
+- 编译产物（`output/`、`list/`、`*.uvopt`、`*.hex` 等）与报告文档不入库，见 `.gitignore`。
 
 ---
 
@@ -129,7 +138,7 @@ project/
 
 3. **导航键/摇杆必须 `AdcInit(ADCexpEXT)`**：凡需用 `GetAdcNavAct()` 检测导航键（上/下/左/右/K3），`AdcInit()` 参数必须是 `ADCexpEXT`。用 `ADCincEXT` 会导致导航键事件完全不触发（症状：拨动摇杆无反应）。`ADCexpEXT` 会占用 EXT 接口的 P1.0/P1.1 作 ADC。
 
-4. **UART 异步发送缓冲区必须用全局 `xdata` 数组**：`Uart1Print`/`Uart2Print` 是异步的（调用返回约 1µs，后台继续发）。若传入**函数内局部栈数组**，函数返回后该内存被其他函数的局部变量覆盖（C51 对 data 区做 Overlay 复用），导致帧头/数据被破坏——典型症状：帧头 `0xAA 0x55` 收到 `0xAA 0x00`（0x55 被覆盖）。**所有发送缓冲必须声明为全局 `xdata` 数组**（Host 的 `uart1_tx[24]`、Slave 的 `uart2_tx[4]` 已如此）。
+4. **UART 异步发送缓冲区必须用全局 `xdata` 数组**：`Uart1Print`/`Uart2Print` 是异步的（调用返回约 1µs，后台继续发）。若传入**函数内局部栈数组**，函数返回后该内存被其他函数的局部变量覆盖（C51 对 data 区做 Overlay 复用），导致帧头/数据被破坏——典型症状：帧头 `0xAA 0x55` 收到 `0xAA 0x00`（0x55 被覆盖）。**所有发送缓冲必须声明为全局 `xdata` 数组**（Host 的 `uart1_tx[FRAME_TX_LEN]`、Slave 的 `uart2_tx[5]` 已如此）。
 
 5. **`enumEventNav` 回调里要轮询所有关心的导航键**：`GetAdcNavAct()` 每次只返回一个键的事件（查询一次后该键事件清零）。在 `cb_nav` 里应逐个调用，不要只查一个。
 
@@ -139,9 +148,9 @@ project/
 
 8. **显示器初始化**：`DisplayerInit()` 后须手动 `Seg7Print(10,10,...)`（全灭）+ `LedPrint(0)`（灭灯）做初始清屏。
 
-9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/easterEgg/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX` 用宏推导（`FRAME_TX_LEN = 18 + 6*BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
+9. **`BULLET_MAX` 与协议帧长必须联动，禁止写死偏移**：Host→PC 状态帧的子弹区长度、胜场/flags/bgMode/easterEgg/shield/校验和偏移、`FRAME_TX_LEN` 必须全部由 `BULLET_MAX`/`BOSS_BULLET_MAX` 用宏推导（当前 `FRAME_TX_LEN = 20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`），PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX`/`config.BOSS_BULLET_MAX` 推导。若写死 `uart1_tx[30/31/32]` 等偏移而 `BULLET_MAX` 变大，子弹区会与后续字段重叠、缓冲区越界，症状为“Host 子弹射出瞬间消失、Slave 子弹显示错乱”。改 `BULLET_MAX` 时须**同时**改 `source/config.h` 与 `pc/config.py` 两处保持一致。
 
-10. **`BOSS_BULLET_MAX` 同样须与协议帧长联动**：合作战 BOSS 子弹区追加在 `easterEgg`/`bossHp` 之后，`FRAME_TX_LEN = 19 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`；PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 与 `config.BOSS_BULLET_MAX` 推导。改动任一子弹上限，两端都必须同步，否则帧错位。
+10. **`BOSS_BULLET_MAX` 同样须与协议帧长联动**：合作战 BOSS 子弹区追加在 `easterEgg`/`shield`/`bossHp` 之后，`FRAME_TX_LEN = 20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`；PC 端 `FRAME_LEN` 同理由 `config.BULLET_MAX` 与 `config.BOSS_BULLET_MAX` 推导。改动任一子弹上限，两端都必须同步，否则帧错位。
 
 ---
 
@@ -245,10 +254,10 @@ project/
   - **无解除武装设计**；标志**开局即消耗**：`menu_confirm` 进入游戏时若 `g_easterArmed`，本局进入彩蛋地图并清零标志（一次性）。
 - **彩蛋地图（本局）**：
   - PC 背景**纯白**（`(255,255,255)`）。
-  - 洞固定为**黑洞**（黑圆+紫环），物理为黑洞引力（与夜晚一致），**无视亮度**（`is_white = bgMode==BG_DAY && !easterEgg`）。
+  - 中央为 **BOSS**（取代黑洞、**无引力**），具体玩法见 7.4；**无视亮度**（`easterEgg=1` 时 `bgMode` 仅用于飞船/HUD 主题）。
   - 飞船/子弹/HUD 沿用**白天主题配色**（深色，纯白背景上可见）。
 - **主机 LED**：处于 `ST_MENU` 且 `g_easterArmed` 时，LED 持续**流水灯**（l0→l1→…→l7→l0 循环，参考"八位数码管+流水灯"样例 `a=(a==0)?1:(a<<1)`）；进入游戏后恢复常规 LED。
-- **协议**：状态帧新增 1 字节 `easterEgg`（0/1），位于 `bgMode` 之后 → `FRAME_TX_LEN = 18 + 6*BULLET_MAX`；PC 解析该字节并据此渲染（`easterEgg=1` 时忽略 `bgMode` 绘制纯白+黑洞）。
+- **协议**：状态帧新增 1 字节 `easterEgg`（0/1），位于 `bgMode` 之后；PC 解析该字节并据此渲染（`easterEgg=1` 时忽略 `bgMode` 绘制纯白+BOSS）。最终帧长见 7.5 与 `docs/protocol.md`（`FRAME_TX_LEN = 20 + 6*BULLET_MAX + 3*BOSS_BULLET_MAX`）。
 
 ### 7.4 彩蛋内容 —— 双人合作打 BOSS (Co-op Boss Battle)
 
@@ -278,8 +287,8 @@ project/
   - 尺寸：缩放到**覆盖碰撞圆**（直径 = `2 × BH_R = 24` 逻辑单位）。
   - **圆形裁剪**（选项 B）：blit 时用圆形遮罩把方形图片裁成内切圆。
   - 缺图兜底：回退绘制实心圆；不得崩溃。
-- **PC 呈现**：纯白背景（延续彩蛋主题）；顶部中央新增 **BOSS 血条**（剩余 HP/20）；双方生命 HUD 保留；BOSS 死亡 → 中央爆炸 + `BOSS DEFEATED!` 结算画面。
-- **协议扩展**：状态帧需新增传输 **BOSS 血量** 与 **BOSS 子弹**（复用现在的子弹区机制，`FRAME_TX_LEN` 由宏推导，禁止写死偏移）。具体字节布局实现前一并写入 `docs/protocol.md`。
+- **PC 呈现**：纯白背景（延续彩蛋主题）；顶部中央新增 **BOSS 血条**（剩余 HP/15）；双方生命 HUD 保留；BOSS 死亡 → 中央爆炸 + `BOSS DEFEATED!` 结算画面。
+- **协议扩展**：状态帧新增传输 **BOSS 血量** 与 **BOSS 子弹**（复用子弹区机制，`FRAME_TX_LEN` 由宏推导，禁止写死偏移）。字节布局见 `docs/protocol.md`，最终帧长见 7.5。
 
 ### 7.5 温度传感器技能 —— 船头护盾 (Temperature Shield)
 
